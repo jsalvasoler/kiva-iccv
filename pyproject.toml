@@ -1,0 +1,15 @@
+[project]
+name = "kiva-iccv"
+version = "0.1.0"
+dependencies = [
+    "pillow",
+    "ipython",
+    "ipykernel",
+    "pip",
+    "numpy",
+    "pandas",
+    "textwrap3",
+    "importlib-metadata",
+    "requests",
+    "matplotlib"
+]

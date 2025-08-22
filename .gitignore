@@ -1,0 +1,11 @@
+# directories
+data/*
+
+# envs
+.venv/
+uv.lock
+
+# python
+__pycache__/
+
+
