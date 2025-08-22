@@ -29,8 +29,8 @@ class Config(BaseModel):
     freeze_encoder: bool = False
     margin: float = 0.5  # Adjusted margin for contrastive loss
     learning_rate: float = 1e-4
-    batch_size: int = 16  # A larger batch size is usually better
-    epochs: int = 10
+    batch_size: int = 32
+    epochs: int = 5
     num_workers: int = 2
     device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
     model_save_path: str = "./models/best_analogy_model.pth"
@@ -43,6 +43,7 @@ def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
         "unit": ("split_unit", "unit.json"),
         "train": ("split_train", "train.json"),
         "validation": ("split_validation", "validation.json"),
+        "validation_sample": ("split_validation", "validation.json"),
         "test": ("split_test", "test.json"),
     }
     if dataset_keyword not in mapping:
@@ -79,8 +80,13 @@ class VisualAnalogyDataset(Dataset):
         self.sample_ids = list(self.metadata.keys())
         self.label_map = {"(A)": 0, "(B)": 1, "(C)": 2}
 
+        print(f"Loaded {len(self.sample_ids)} samples from {metadata_path}")
+
     def __len__(self) -> int:
         return len(self.sample_ids)
+
+    def sample_validation_set(self, n: int) -> None:
+        self.sample_ids = random.sample(self.sample_ids, n)
 
     def __getitem__(self, idx: int) -> tuple:
         sample_id = self.sample_ids[idx]
@@ -211,6 +217,10 @@ def train(args, device: torch.device) -> None:
 
     val_data_dir, val_meta_path = get_dataset_paths(args.validate_on)
     val_dataset = VisualAnalogyDataset(val_data_dir, val_meta_path)
+
+    if args.validate_on == "validation_sample":
+        val_dataset.sample_validation_set(int(len(train_dataset) * 0.1))
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=train_config.batch_size,
@@ -326,17 +336,27 @@ parser.add_argument("--do_train", action="store_true", help="Whether to run trai
 parser.add_argument(
     "--do_test", action="store_true", help="Whether to run testing on the test set."
 )
+dataset_options = ["unit", "train", "validation", "test"]
 parser.add_argument(
-    "--train_on", type=str, default="train", help="Dataset keyword for training."
+    "--train_on",
+    type=str,
+    default="train",
+    choices=dataset_options,
+    help="Dataset keyword for training.",
 )
 parser.add_argument(
     "--validate_on",
     type=str,
-    default="validation",
+    default="validation_sample",
+    choices=dataset_options + ["validation_sample"],
     help="Dataset keyword for validation.",
 )
 parser.add_argument(
-    "--test_on", type=str, default="test", help="Dataset keyword for testing."
+    "--test_on",
+    type=str,
+    default="test",
+    choices=dataset_options,
+    help="Dataset keyword for testing.",
 )
 
 
