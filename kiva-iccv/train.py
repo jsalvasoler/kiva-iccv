@@ -108,7 +108,7 @@ class VisualAnalogyDataset(Dataset):
 
         correct_choice_str = self.metadata[sample_id]["correct"]
         correct_idx = self.label_map[correct_choice_str]
-        return (*images, torch.tensor(correct_idx, dtype=torch.long))
+        return (*images, torch.tensor(correct_idx, dtype=torch.long), sample_id)
 
 
 class SiameseAnalogyNetwork(nn.Module):
@@ -160,17 +160,34 @@ class ContrastiveAnalogyLoss(nn.Module):
         return torch.mean(loss1 + loss2)
 
 
-def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device) -> float:
+def evaluate(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device,
+    save_predictions: bool = False,
+    dataset: VisualAnalogyDataset = None,
+) -> float:
     """
     Evaluates the model on a given dataset and calculates accuracy.
+    Optionally saves predictions to a submission file.
     """
-    model.eval()  # Set the model to evaluation mode
+    model.eval()
     total_correct = 0
     total_samples = 0
+    predictions = []
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Evaluating"):
-            ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx = batch
+            (
+                ex_before,
+                ex_after,
+                test_before,
+                ch_a,
+                ch_b,
+                ch_c,
+                correct_idx,
+                sample_id,
+            ) = batch
 
             ex_before, ex_after, test_before = (
                 ex_before.to(device),
@@ -188,13 +205,32 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device) -> 
             all_sims = torch.stack([sim_a, sim_b, sim_c], dim=1)
 
             # Get predictions by finding the index of the max similarity score
-            predictions = torch.argmax(all_sims, dim=1)
+            predictions_batch = torch.argmax(all_sims, dim=1)
 
             # --- Update metrics ---
-            total_correct += (predictions == correct_idx).sum().item()
+            total_correct += (predictions_batch == correct_idx).sum().item()
             total_samples += ex_before.size(0)
 
+            # --- Store predictions for submission if requested ---
+            if save_predictions and dataset:
+                for i, pred_idx in enumerate(predictions_batch):
+                    choice_map = {0: "(A)", 1: "(B)", 2: "(C)"}
+                    predicted_choice = choice_map[pred_idx.item()]
+                    # Use the sample_id from the batch
+                    batch_sample_id = sample_id[i]
+                    predictions.append(
+                        {"id": batch_sample_id, "answer": predicted_choice}
+                    )
+
     accuracy = 100 * total_correct / total_samples
+
+    # Save predictions if requested
+    if save_predictions and predictions:
+        submission_file = "submission.json"
+        with open(submission_file, "w") as f:
+            json.dump(predictions, f, indent=4)
+        print(f"📄 Submission file saved: {submission_file}")
+
     return accuracy
 
 
@@ -239,6 +275,7 @@ def train(args, device: torch.device) -> None:
     print(
         f"\n🚀 Starting training on '{args.train_on}' dataset, validating on '{args.validate_on}'..."
     )
+    print(f"Number of parameters: {sum(p.numel() for p in model.parameters())}")
     best_accuracy = 0.0
 
     # 3. Training Loop
@@ -250,7 +287,7 @@ def train(args, device: torch.device) -> None:
         )
 
         for batch in progress_bar:
-            ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx = batch
+            ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx, _ = batch
             ex_before, ex_after, test_before = (
                 ex_before.to(device),
                 ex_after.to(device),
@@ -323,8 +360,10 @@ def test(args, device: torch.device) -> None:
         num_workers=test_config.num_workers,
     )
 
-    # 3. Run final evaluation
-    test_accuracy = evaluate(model, test_loader, device)
+    # 3. Run final evaluation and generate submission file
+    test_accuracy = evaluate(
+        model, test_loader, device, save_predictions=True, dataset=test_dataset
+    )
     print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
 
 
