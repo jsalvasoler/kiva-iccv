@@ -1,6 +1,7 @@
 [project]
 name = "kiva-iccv"
 version = "0.1.0"
+requires-python = ">=3.12"
 dependencies = [
     "pillow",
     "ipython",
@@ -11,5 +12,9 @@ dependencies = [
     "textwrap3",
     "importlib-metadata",
     "requests",
-    "matplotlib"
+    "matplotlib",
+    "tqdm",
+    "torch",
+    "torchvision",
+    "pydantic"
 ]
