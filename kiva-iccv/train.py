@@ -1,5 +1,3 @@
-# train_analogy.py
-
 import json
 import os
 from datetime import datetime
@@ -8,10 +6,10 @@ import neptune
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.models as models
 from config import Config, create_argument_parser, create_config_from_args
 from dataset import VisualAnalogyDataset, get_dataset_paths
 from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
+from model import SiameseAnalogyNetwork
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -24,7 +22,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-def log_experiment_results(
+def print_experiment_results(
     config: Config,
     args,
     best_accuracy: float,
@@ -34,131 +32,44 @@ def log_experiment_results(
     experiment_type: str = "train",
     test_accuracy: float = None,
 ) -> None:
-    """Log experiment results to results.txt"""
+    """Log experiment results to terminal (no file writing)."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    results_file = "results.txt"
+    print("=" * 80)
+    print(f"EXPERIMENT: {experiment_type.upper()}")
+    print(f"TIMESTAMP: {timestamp}")
+    print("=" * 80)
+    print("\nCONFIGURATION:")
 
-    # Create header if file doesn't exist
-    if not os.path.exists(results_file):
-        with open(results_file, "w") as f:
-            f.write("=== EXPERIMENT RESULTS LOG ===\n\n")
+    # Print config fields and their values
+    print("  Config fields:")
+    IGNORED_FIELDS = ["device", "model_save_path", "data_dir", "metadata_path", "neptune_api_token"]
+    for field_name, field in config.model_dump().items():
+        if field_name not in IGNORED_FIELDS:
+            print(f"  {field_name:<20} {field}")
 
-    with open(results_file, "a") as f:
-        f.write(f"{'=' * 80}\n")
-        f.write(f"EXPERIMENT: {experiment_type.upper()}\n")
-        f.write(f"TIMESTAMP: {timestamp}\n")
-        f.write(f"{'=' * 80}\n\n")
+    # Print number of model parameters
+    print(f"  {'Model parameters':<20} {num_parameters:,}")
 
-        # Configuration
-        f.write("CONFIGURATION:\n")
-        f.write(f"  Dataset (train):     {args.train_on}\n")
-        f.write(f"  Dataset (validate):  {args.validate_on}\n")
-        if experiment_type == "test":
-            f.write(f"  Dataset (test):      {args.test_on}\n")
-        f.write(f"  Loss type:           {config.loss_type}\n")
-        f.write(f"  Margin:              {config.margin}\n")
-        f.write(f"  Embedding dim:       {config.embedding_dim}\n")
-        f.write(f"  Transformation net:  {config.transformation_net}\n")
-        f.write(f"  Freeze encoder:      {config.freeze_encoder}\n")
-        f.write(f"  Learning rate:       {config.learning_rate}\n")
-        f.write(f"  Batch size:          {config.batch_size}\n")
-        f.write(f"  Epochs:              {config.epochs}\n")
-        f.write(f"  Num workers:         {config.num_workers}\n")
-        f.write(f"  Model parameters:    {num_parameters:,}\n")
-        f.write(f"  Device:              {config.device}\n")
-        f.write("\n")
+    # Print dataset info from args if available
+    if hasattr(args, "train_on"):
+        print(f"  {'Dataset (train)':<20} {args.train_on}")
+    if hasattr(args, "validate_on"):
+        print(f"  {'Dataset (validate)':<20} {args.validate_on}")
+    if experiment_type == "test" and hasattr(args, "test_on"):
+        print(f"  {'Dataset (test)':<20} {args.test_on}")
 
-        # Results
-        f.write("RESULTS:\n")
-        if experiment_type == "train":
-            f.write(f"  Final train loss:      {final_train_loss:.4f}\n")
-            f.write(f"  Final train accuracy:  {final_train_accuracy:.2f}%\n")
-            f.write(f"  Best validation acc:   {best_accuracy:.2f}%\n")
-        elif experiment_type == "test":
-            f.write(f"  Test accuracy:         {test_accuracy:.2f}%\n")
-        f.write("\n")
-
-        # Model save path
-        f.write(f"MODEL SAVED TO: {config.model_save_path}\n")
-        f.write(f"{'=' * 80}\n\n")
-
-    print(f"📝 Experiment results logged to {results_file}")
-
-
-class SiameseAnalogyNetwork(nn.Module):
-    def __init__(
-        self,
-        embedding_dim: int = 512,
-        freeze_encoder: bool = False,
-        transformation_net: bool = False,
-    ):
-        super().__init__()
-        resnet = models.resnet18(weights="IMAGENET1K_V1")
-        self.encoder = nn.Sequential(*list(resnet.children())[:-1])
-
-        if freeze_encoder:
-            for param in self.encoder.parameters():
-                param.requires_grad = False
-
-        self.projection = nn.Linear(resnet.fc.in_features, embedding_dim)
-
-        self.transformation_net = (
-            nn.Sequential(
-                nn.Linear(
-                    embedding_dim * 2, embedding_dim
-                ),  # Input is a concatenation of two embeddings
-                nn.ReLU(),
-                nn.Linear(embedding_dim, embedding_dim),
-                nn.ReLU(),
-                nn.Linear(embedding_dim, embedding_dim),
-            )
-            if transformation_net
-            else None
-        )
-
-    def forward(
-        self,
-        ex_before: torch.Tensor,
-        ex_after: torch.Tensor,
-        test_before: torch.Tensor,
-        choice_a: torch.Tensor,
-        choice_b: torch.Tensor,
-        choice_c: torch.Tensor,
-    ) -> tuple[torch.Tensor, ...]:
-        # Determine the batch size from one of the tensors
-        batch_size = ex_before.size(0)
-
-        # Reshape all tensors into a single batch, preserving the C, H, W dimensions
-        # and stacking along a new dimension (dim=0)
-        all_tensors = torch.cat(
-            [ex_before, ex_after, test_before, choice_a, choice_b, choice_c], dim=0
-        )
-
-        # Process the combined batch
-        all_embeddings = self.projection(self.encoder(all_tensors).flatten(1))
-
-        # Split the embeddings back based on the batch size
-        t_ex_before = all_embeddings[0 * batch_size : 1 * batch_size]
-        t_ex_after = all_embeddings[1 * batch_size : 2 * batch_size]
-        t_test_before = all_embeddings[2 * batch_size : 3 * batch_size]
-        t_choice_a = all_embeddings[3 * batch_size : 4 * batch_size]
-        t_choice_b = all_embeddings[4 * batch_size : 5 * batch_size]
-        t_choice_c = all_embeddings[5 * batch_size : 6 * batch_size]
-
-        # Calculate the transformation vectors
-        if self.transformation_net:
-            t_example = self.transformation_net(torch.cat([t_ex_before, t_ex_after], dim=1))
-            t_choice_a_vec = self.transformation_net(torch.cat([t_test_before, t_choice_a], dim=1))
-            t_choice_b_vec = self.transformation_net(torch.cat([t_test_before, t_choice_b], dim=1))
-            t_choice_c_vec = self.transformation_net(torch.cat([t_test_before, t_choice_c], dim=1))
-        else:
-            t_example = t_ex_after - t_ex_before
-            t_choice_a_vec = t_choice_a - t_test_before
-            t_choice_b_vec = t_choice_b - t_test_before
-            t_choice_c_vec = t_choice_c - t_test_before
-
-        return t_example, t_choice_a_vec, t_choice_b_vec, t_choice_c_vec
+    print("\nRESULTS:")
+    if experiment_type == "train":
+        print(f"  Final train loss:      {final_train_loss:.4f}")
+        print(f"  Final train accuracy:  {final_train_accuracy:.2f}%")
+        print(f"  Best validation acc:   {best_accuracy:.2f}%")
+    elif experiment_type == "test":
+        print(f"  Test accuracy:         {test_accuracy:.2f}%")
+    print()
+    print(f"MODEL SAVED TO: {config.model_save_path}")
+    print("=" * 80)
+    print("\n📝 Experiment results logged to terminal.")
 
 
 def evaluate(
@@ -409,7 +320,7 @@ def train(args, device: torch.device) -> None:
         print("🔗 Neptune run completed and stopped")
 
     # Log experiment results
-    log_experiment_results(
+    print_experiment_results(
         config=train_config,
         args=args,
         best_accuracy=best_accuracy,
@@ -461,7 +372,7 @@ def test(args, device: torch.device) -> None:
         print("🔗 Neptune test run completed and stopped")
 
     # Log test results
-    log_experiment_results(
+    print_experiment_results(
         config=test_config,
         args=args,
         best_accuracy=0.0,  # Not applicable for test
