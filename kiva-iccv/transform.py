@@ -10,6 +10,7 @@ Break a sample of the KiVA dataset into 6 parts:
 
 """
 
+import argparse
 import json
 import os
 from multiprocessing import Pool
@@ -138,8 +139,23 @@ def transform_dataset(dataset_json_path: str, output_dir: str) -> None:
         )
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Transform KIVA dataset images into split subimages."
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="unit",
+        choices=["unit", "train", "validation", "test"],
+        help="Which dataset to process (unit, train, validation, test).",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    which_dataset = "unit"  # "train" or "validation" or "unit"
+    args = parse_args()
+    which_dataset = args.dataset
     investigate_sizes(f"./data/{which_dataset}.json")
 
     os.makedirs(f"./data/split_{which_dataset}", exist_ok=True)
