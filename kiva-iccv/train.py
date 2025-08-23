@@ -15,6 +15,8 @@ import argparse
 import os
 import random
 from typing import Literal
+from dataset import get_dataset_paths, VisualAnalogyDataset
+from loss import StandardTripletAnalogyLoss
 
 
 class Config(BaseModel):
@@ -27,7 +29,7 @@ class Config(BaseModel):
     # Model & Training
     embedding_dim: int = 512
     freeze_encoder: bool = False
-    margin: float = 0.5  # Adjusted margin for contrastive loss
+    margin: float = 1.0
     learning_rate: float = 1e-4
     batch_size: int = 32
     epochs: int = 5
@@ -36,94 +38,17 @@ class Config(BaseModel):
     model_save_path: str = "./models/best_analogy_model.pth"
 
 
-def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
-    """Returns the data directory and metadata path based on a keyword."""
-    base_data_path = "./data"
-    mapping = {
-        "unit": ("split_unit", "unit.json"),
-        "train": ("split_train", "train.json"),
-        "validation": ("split_validation", "validation.json"),
-        "validation_sample": ("split_validation", "validation.json"),
-        "test": ("split_test", "test.json"),
-    }
-    if dataset_keyword not in mapping:
-        raise ValueError(f"Invalid dataset keyword '{dataset_keyword}'.")
-    split_dir, meta_file = mapping[dataset_keyword]
-
-    data_dir = os.path.join(base_data_path, split_dir)
-    metadata_path = os.path.join(base_data_path, meta_file)
-
-    if not os.path.isdir(data_dir):
-        raise FileNotFoundError(f"Data directory not found: {data_dir}")
-    if not os.path.isfile(metadata_path):
-        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
-
-    return data_dir, metadata_path
-
-
-class VisualAnalogyDataset(Dataset):
-    def __init__(self, data_dir: str, metadata_path: str, transform=None):
-        self.root_dir = Path(data_dir)
-        self.transform = transform
-        if transform is None:
-            self.transform = transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
-                ]
-            )
-        with open(metadata_path, "r") as f:
-            self.metadata = json.load(f)
-        self.sample_ids = list(self.metadata.keys())
-        self.label_map = {"(A)": 0, "(B)": 1, "(C)": 2}
-
-        print(f"Loaded {len(self.sample_ids)} samples from {metadata_path}")
-
-    def __len__(self) -> int:
-        return len(self.sample_ids)
-
-    def sample_validation_set(self, n: int) -> None:
-        self.sample_ids = random.sample(self.sample_ids, n)
-
-    def __getitem__(self, idx: int) -> tuple:
-        sample_id = self.sample_ids[idx]
-        image_types = [
-            "ex_before",
-            "ex_after",
-            "test_before",
-            "choice_a",
-            "choice_b",
-            "choice_c",
-        ]
-        images = []
-        for img_type in image_types:
-            img_path = self.root_dir / f"{sample_id}_{img_type}.jpg"
-            image = Image.open(img_path).convert("RGB")
-            if self.transform:
-                image = self.transform(image)
-            images.append(image)
-
-        correct_choice_str = self.metadata[sample_id]["correct"]
-        correct_idx = self.label_map[correct_choice_str]
-        return (*images, torch.tensor(correct_idx, dtype=torch.long), sample_id)
-
-
 class SiameseAnalogyNetwork(nn.Module):
     def __init__(self, embedding_dim: int = 512, freeze_encoder: bool = True):
         super().__init__()
         resnet = models.resnet18(weights="IMAGENET1K_V1")
         self.encoder = nn.Sequential(*list(resnet.children())[:-1])
 
-        # Freeze the encoder weights
         if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
         self.projection = nn.Linear(resnet.fc.in_features, embedding_dim)
-        self.similarity = nn.CosineSimilarity(dim=1)
 
     def _get_transformation_vec(
         self, img_before: torch.Tensor, img_after: torch.Tensor
@@ -134,30 +59,23 @@ class SiameseAnalogyNetwork(nn.Module):
 
     def forward(
         self,
-        before1: torch.Tensor,
-        after1: torch.Tensor,
-        before2: torch.Tensor,
-        after2: torch.Tensor,
-    ) -> torch.Tensor:
-        t1 = self._get_transformation_vec(before1, after1)
-        t2 = self._get_transformation_vec(before2, after2)
-        return self.similarity(t1, t2)
+        ex_before: torch.Tensor,
+        ex_after: torch.Tensor,
+        test_before: torch.Tensor,
+        choice_a: torch.Tensor,
+        choice_b: torch.Tensor,
+        choice_c: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        # Calculate the transformation vector for the main example
+        t_example = self._get_transformation_vec(ex_before, ex_after)
 
+        # Calculate the transformation vectors for each of the three choices
+        t_choice_a = self._get_transformation_vec(test_before, choice_a)
+        t_choice_b = self._get_transformation_vec(test_before, choice_b)
+        t_choice_c = self._get_transformation_vec(test_before, choice_c)
 
-class ContrastiveAnalogyLoss(nn.Module):
-    def __init__(self, margin=0.5):
-        super().__init__()
-        self.margin = margin
-
-    def forward(
-        self,
-        sim_positive: torch.Tensor,
-        sim_negative1: torch.Tensor,
-        sim_negative2: torch.Tensor,
-    ) -> torch.Tensor:
-        loss1 = torch.clamp(self.margin - (sim_positive - sim_negative1), min=0)
-        loss2 = torch.clamp(self.margin - (sim_positive - sim_negative2), min=0)
-        return torch.mean(loss1 + loss2)
+        # Return all the vectors. The loss function will handle the comparison.
+        return t_example, t_choice_a, t_choice_b, t_choice_c
 
 
 def evaluate(
@@ -189,17 +107,24 @@ def evaluate(
                 sample_id,
             ) = batch
 
-            ex_before, ex_after, test_before = (
+            ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx = (
                 ex_before.to(device),
                 ex_after.to(device),
                 test_before.to(device),
+                ch_a.to(device),
+                ch_b.to(device),
+                ch_c.to(device),
+                correct_idx.to(device),
             )
-            ch_a, ch_b, ch_c = ch_a.to(device), ch_b.to(device), ch_c.to(device)
-            correct_idx = correct_idx.to(device)
 
-            sim_a = model(ex_before, ex_after, test_before, ch_a)
-            sim_b = model(ex_before, ex_after, test_before, ch_b)
-            sim_c = model(ex_before, ex_after, test_before, ch_c)
+            t_example, t_choice_a, t_choice_b, t_choice_c = model(
+                ex_before, ex_after, test_before, ch_a, ch_b, ch_c
+            )
+
+            # Compute similarities between example transformation and each choice transformation
+            sim_a = torch.cosine_similarity(t_example, t_choice_a, dim=1)
+            sim_b = torch.cosine_similarity(t_example, t_choice_b, dim=1)
+            sim_c = torch.cosine_similarity(t_example, t_choice_c, dim=1)
 
             # Stack similarity scores: shape becomes (batch_size, 3)
             all_sims = torch.stack([sim_a, sim_b, sim_c], dim=1)
@@ -269,7 +194,7 @@ def train(args, device: torch.device) -> None:
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
     ).to(device)
-    criterion = ContrastiveAnalogyLoss(margin=train_config.margin)
+    criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
     optimizer = optim.Adam(model.parameters(), lr=train_config.learning_rate)
 
     print(
@@ -288,34 +213,17 @@ def train(args, device: torch.device) -> None:
 
         for batch in progress_bar:
             ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx, _ = batch
-            ex_before, ex_after, test_before = (
-                ex_before.to(device),
-                ex_after.to(device),
-                test_before.to(device),
-            )
-            choices = torch.stack([ch_a, ch_b, ch_c], dim=1).to(device)
+            ex_before = ex_before.to(device)
+            ex_after = ex_after.to(device)
+            test_before = test_before.to(device)
+            ch_a = ch_a.to(device)
+            ch_b = ch_b.to(device)
+            ch_c = ch_c.to(device)
             correct_idx = correct_idx.to(device)
-            batch_size = ex_before.shape[0]
-
-            positive_choices = choices.gather(
-                1,
-                correct_idx.view(batch_size, 1, 1, 1, 1).expand(
-                    -1, 1, *choices.shape[2:]
-                ),
-            ).squeeze(1)
-            neg_choices_1, neg_choices_2 = [], []
-            for i in range(batch_size):
-                neg_indices = [j for j in range(3) if j != correct_idx[i]]
-                neg_choices_1.append(choices[i, neg_indices[0]])
-                neg_choices_2.append(choices[i, neg_indices[1]])
-            negative_choices_1 = torch.stack(neg_choices_1)
-            negative_choices_2 = torch.stack(neg_choices_2)
 
             optimizer.zero_grad()
-            sim_positive = model(ex_before, ex_after, test_before, positive_choices)
-            sim_negative1 = model(ex_before, ex_after, test_before, negative_choices_1)
-            sim_negative2 = model(ex_before, ex_after, test_before, negative_choices_2)
-            loss = criterion(sim_positive, sim_negative1, sim_negative2)
+            model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
+            loss = criterion(model_outputs, correct_idx)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
