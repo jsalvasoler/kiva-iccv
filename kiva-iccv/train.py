@@ -257,7 +257,7 @@ def train(args, device: torch.device) -> None:
     val_dataset = VisualAnalogyDataset(val_data_dir, val_meta_path)
 
     if args.validate_on == "validation_sample":
-        val_dataset.sample_validation_set(int(len(train_dataset) * 0.1))
+        val_dataset.sample_validation_set(int(len(val_dataset) * 0.1))
 
     val_loader = DataLoader(
         val_dataset,
