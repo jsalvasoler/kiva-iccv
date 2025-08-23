@@ -1,17 +1,15 @@
 # train_analogy.py
 
-import argparse
 import json
 import os
-from typing import Literal
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
+from config import create_argument_parser, create_config_from_args
 from dataset import VisualAnalogyDataset, get_dataset_paths
 from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
-from pydantic import BaseModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -22,28 +20,6 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(42)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-
-
-class Config(BaseModel):
-    """Configuration class for hyperparameters."""
-
-    # Paths will be provided by the argparser
-    data_dir: str
-    metadata_path: str
-
-    # Loss
-    loss_type: Literal["standard_triplet", "contrastive"] = "contrastive"
-    margin: float = 0.5
-
-    # Model & Training
-    embedding_dim: int = 512
-    freeze_encoder: bool = False
-    learning_rate: float = 1e-4
-    batch_size: int = 64
-    epochs: int = 5
-    num_workers: int = 4
-    device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
-    model_save_path: str = "./models/best_analogy_model.pth"
 
 
 class SiameseAnalogyNetwork(nn.Module):
@@ -120,7 +96,7 @@ def evaluate(
     predictions = []
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="  -- Evaluating --   "):
+        for batch in tqdm(dataloader, desc="  -- Evaluating --  "):
             (
                 ex_before,
                 ex_after,
@@ -186,9 +162,8 @@ def train(args, device: torch.device) -> None:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
     train_data_dir, train_meta_path = get_dataset_paths(args.train_on)
-    train_config = Config(
-        data_dir=train_data_dir, metadata_path=train_meta_path, device=str(device)
-    )
+    train_config = create_config_from_args(args, train_data_dir, train_meta_path)
+    train_config.device = str(device)
     train_dataset = VisualAnalogyDataset(train_config.data_dir, train_config.metadata_path)
     train_loader = DataLoader(
         train_dataset,
@@ -278,7 +253,8 @@ def test(args, device: torch.device) -> None:
     """Testing function that evaluates the trained model."""
     print(f"\n🧪 Starting testing on '{args.test_on}' dataset...")
     test_data_dir, test_meta_path = get_dataset_paths(args.test_on)
-    test_config = Config(data_dir=test_data_dir, metadata_path=test_meta_path, device=str(device))
+    test_config = create_config_from_args(args, test_data_dir, test_meta_path)
+    test_config.device = str(device)
 
     # 1. Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(embedding_dim=test_config.embedding_dim).to(device)
@@ -301,35 +277,7 @@ def test(args, device: torch.device) -> None:
 
 
 # Argument parser setup
-parser = argparse.ArgumentParser(
-    description="Train and evaluate a Siamese Network for Visual Analogies."
-)
-parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
-parser.add_argument(
-    "--do_test", action="store_true", help="Whether to run testing on the test set."
-)
-dataset_options = ["unit", "train", "validation", "test"]
-parser.add_argument(
-    "--train_on",
-    type=str,
-    default="train",
-    choices=dataset_options,
-    help="Dataset keyword for training.",
-)
-parser.add_argument(
-    "--validate_on",
-    type=str,
-    default="validation_sample",
-    choices=dataset_options + ["validation_sample"],
-    help="Dataset keyword for validation.",
-)
-parser.add_argument(
-    "--test_on",
-    type=str,
-    default="test",
-    choices=dataset_options,
-    help="Dataset keyword for testing.",
-)
+parser = create_argument_parser()
 
 
 if __name__ == "__main__":
