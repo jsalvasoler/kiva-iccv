@@ -26,7 +26,6 @@ class Config(BaseModel):
     epochs: int = 5
     num_workers: int = 4
     device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
-    model_save_path: str = "./models/best_analogy_model.pth"
 
     # Neptune logging
     use_neptune: bool = False
@@ -48,7 +47,6 @@ def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "num_workers": args.num_workers,
-        "model_save_path": args.model_save_path,
         "use_neptune": args.use_neptune,
         "neptune_project": args.neptune_project or os.getenv("NEPTUNE_PROJECT", ""),
         "neptune_api_token": args.neptune_api_token or os.getenv("NEPTUNE_API_TOKEN", ""),
@@ -69,7 +67,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--do_test", action="store_true", help="Whether to run testing on the test set."
     )
-
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="",
+        help="Output directory for model and predictions. Must be specified if only testing.",
+    )
     # Dataset arguments
     dataset_options = ["unit", "train", "validation", "test"]
     parser.add_argument(
@@ -113,12 +116,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=5, help="Number of epochs")
     parser.add_argument(
         "--num_workers", type=int, default=4, help="Number of workers for data loading"
-    )
-    parser.add_argument(
-        "--model_save_path",
-        type=str,
-        default="./models/best_analogy_model.pth",
-        help="Model save path",
     )
 
     parser.add_argument("--use_neptune", action="store_true", help="Use Neptune for logging")

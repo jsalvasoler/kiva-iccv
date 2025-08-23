@@ -1,9 +1,8 @@
 # directories
 data/*
-models/*
 notebook/*.svg
 notebook/*.json
-
+output/*
 
 # envs
 .venv/

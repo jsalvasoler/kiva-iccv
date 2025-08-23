@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from datetime import datetime
 
 import neptune
@@ -22,6 +23,41 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
+def setup_output_directory_for_training(args, neptune_run) -> str:
+    """Setup output directory structure for Neptune runs.
+
+    Returns:
+        str: model_save_path
+    """
+
+    if args.output_dir:
+        raise ValueError(
+            "Cannot specify --output_dir when using --do_train. "
+            "Output directory is automatically managed during training."
+        )
+
+    if not neptune_run:
+        output_dir = tempfile.mkdtemp()
+    else:
+        # Get Neptune run ID
+        run_id = neptune_run["sys/id"].fetch()
+        # Create output directory structure
+        output_dir = f"./output/{run_id}"
+
+    args.output_dir = output_dir
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create models subdirectory
+    os.makedirs(f"{output_dir}/models", exist_ok=True)
+
+    # Set model save path
+    model_save_path = f"{output_dir}/models/best_model.pth"
+
+    print(f"📁 Output directory created: {output_dir}")
+    return model_save_path
+
+
 def print_experiment_results(
     config: Config,
     args,
@@ -42,8 +78,7 @@ def print_experiment_results(
     print("\nCONFIGURATION:")
 
     # Print config fields and their values
-    print("  Config fields:")
-    IGNORED_FIELDS = ["device", "model_save_path", "data_dir", "metadata_path", "neptune_api_token"]
+    IGNORED_FIELDS = ["device", "data_dir", "metadata_path", "neptune_api_token", "neptune_project"]
     for field_name, field in config.model_dump().items():
         if field_name not in IGNORED_FIELDS:
             print(f"  {field_name:<20} {field}")
@@ -58,6 +93,8 @@ def print_experiment_results(
         print(f"  {'Dataset (validate)':<20} {args.validate_on}")
     if experiment_type == "test" and hasattr(args, "test_on"):
         print(f"  {'Dataset (test)':<20} {args.test_on}")
+    if hasattr(args, "neptune_url"):
+        print(f"  {'Neptune URL':<20} {args.neptune_url}")
 
     print("\nRESULTS:")
     if experiment_type == "train":
@@ -66,10 +103,7 @@ def print_experiment_results(
         print(f"  Best validation acc:   {best_accuracy:.2f}%")
     elif experiment_type == "test":
         print(f"  Test accuracy:         {test_accuracy:.2f}%")
-    print()
-    print(f"MODEL SAVED TO: {config.model_save_path}")
-    print("=" * 80)
-    print("\n📝 Experiment results logged to terminal.")
+    print("\n" + ("=" * 80))
 
 
 def evaluate(
@@ -143,7 +177,7 @@ def evaluate(
 
     # Save predictions if requested
     if save_predictions and predictions:
-        submission_file = "submission.json"
+        submission_file = f"{args.output_dir}/submission.json"
         with open(submission_file, "w") as f:
             json.dump(predictions, f, indent=4)
         print(f"📄 Submission file saved: {submission_file}")
@@ -151,7 +185,7 @@ def evaluate(
     return accuracy
 
 
-def init_neptune(config: Config, experiment_type: str):
+def init_neptune(config: Config, args, experiment_type: str):
     """Initialize Neptune logging."""
     neptune_run = None
     if not config.use_neptune:
@@ -167,7 +201,7 @@ def init_neptune(config: Config, experiment_type: str):
         project=config.neptune_project,
         api_token=config.neptune_api_token,
         name=f"kiva-iccv-{experiment_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        tags=["visual-analogy", "siamese-network"],
+        tags=[tag for tag, flag in (("train", args.do_train), ("test", args.do_test)) if flag],
     )
 
     # Log configuration parameters
@@ -183,16 +217,18 @@ def init_neptune(config: Config, experiment_type: str):
         "num_workers": config.num_workers,
     }
 
-    print(f"🔗 Neptune logging enabled: {neptune_run.get_url()}")
+    neptune_url = neptune_run.get_url()
+    print(f"🔗 Neptune logging enabled: {neptune_url}")
+    args.neptune_url = neptune_url
+
     return neptune_run
 
 
-def train(args, device: torch.device) -> None:
+def train(args) -> str:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
     train_data_dir, train_meta_path = get_dataset_paths(args.train_on)
     train_config = create_config_from_args(args, train_data_dir, train_meta_path)
-    train_config.device = str(device)
     train_dataset = VisualAnalogyDataset(train_config.data_dir, train_config.metadata_path)
     train_loader = DataLoader(
         train_dataset,
@@ -215,7 +251,10 @@ def train(args, device: torch.device) -> None:
     )
 
     # 2. Initialize Neptune logging
-    neptune_run = init_neptune(train_config, "train")
+    neptune_run = init_neptune(train_config, args, "train")
+
+    # Setup output directory if Neptune is working
+    model_save_path = setup_output_directory_for_training(args, neptune_run)
 
     # Initialize model, loss, and optimizer
     model = SiameseAnalogyNetwork(
@@ -300,11 +339,10 @@ def train(args, device: torch.device) -> None:
             neptune_run["training/val_accuracy"].append(val_accuracy)
             neptune_run["training/learning_rate"].append(train_config.learning_rate)
 
-        # --- 💾 Save the best model ---
+        # --- 💾 Save the best model (only if Neptune is working) ---
         if val_accuracy > best_accuracy:
             best_accuracy = val_accuracy
-            os.makedirs(os.path.dirname(train_config.model_save_path), exist_ok=True)
-            torch.save(model.state_dict(), train_config.model_save_path)
+            torch.save(model.state_dict(), model_save_path)
             print(f"✨ New best model saved with accuracy: {best_accuracy:.2f}%")
 
     print("🏁 Training finished.")
@@ -315,9 +353,12 @@ def train(args, device: torch.device) -> None:
         neptune_run["training/final_train_accuracy"] = train_accuracy
         neptune_run["training/best_val_accuracy"] = best_accuracy
         neptune_run["training/total_parameters"] = sum(p.numel() for p in model.parameters())
-        neptune_run["training/model_save_path"] = train_config.model_save_path
+        neptune_run["training/model_save_path"] = model_save_path
+        neptune_run_id = neptune_run["sys/id"].fetch()
         neptune_run.stop()
         print("🔗 Neptune run completed and stopped")
+    else:
+        neptune_run_id = None
 
     # Log experiment results
     print_experiment_results(
@@ -330,23 +371,42 @@ def train(args, device: torch.device) -> None:
         experiment_type="train",
     )
 
+    return neptune_run_id
 
-def test(args, device: torch.device) -> None:
+
+def test(args, neptune_run_id: str | None) -> None:
     """Testing function that evaluates the trained model."""
     print(f"\n🧪 Starting testing on '{args.test_on}' dataset...")
     test_data_dir, test_meta_path = get_dataset_paths(args.test_on)
     test_config = create_config_from_args(args, test_data_dir, test_meta_path)
-    test_config.device = str(device)
 
     # Initialize Neptune logging
-    neptune_run = init_neptune(test_config, "test")
+    if neptune_run_id is None:
+        neptune_run = init_neptune(test_config, args, "test")
+    else:
+        # continue the existing Neptune run
+        neptune_run = neptune.init_run(with_id=neptune_run_id)
 
     # 1. Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(
         embedding_dim=test_config.embedding_dim,
         transformation_net=test_config.transformation_net,
     ).to(device)
-    model.load_state_dict(torch.load(test_config.model_save_path))
+
+    # Load model from output directory if available
+    output_dir = args.output_dir
+    model_path = f"{output_dir}/models/best_model.pth"
+    if output_dir:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found in output directory: {model_path}")
+    else:
+        raise ValueError(
+            "No output directory available. "
+            "If only testing, please specify an output directory with the --output_dir flag. "
+            "If also training, this is automatically managed."
+        )
+
+    model.load_state_dict(torch.load(model_path))
 
     # 2. Setup the test dataloader
     test_dataset = VisualAnalogyDataset(test_config.data_dir, test_config.metadata_path)
@@ -359,7 +419,7 @@ def test(args, device: torch.device) -> None:
 
     # 3. Run final evaluation and generate submission file
     test_accuracy = evaluate(
-        model, test_loader, device, save_predictions=True, dataset=test_dataset
+        model, test_loader, device, save_predictions=neptune_run is not None, dataset=test_dataset
     )
     print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
 
@@ -367,7 +427,6 @@ def test(args, device: torch.device) -> None:
     if neptune_run:
         neptune_run["testing/test_accuracy"] = test_accuracy
         neptune_run["testing/total_parameters"] = sum(p.numel() for p in model.parameters())
-        neptune_run["testing/model_path"] = test_config.model_save_path
         neptune_run.stop()
         print("🔗 Neptune test run completed and stopped")
 
@@ -394,8 +453,10 @@ if __name__ == "__main__":
 
     # --- Training Phase ---
     if args.do_train:
-        train(args, device)
+        neptune_run_id = train(args)
+    else:
+        neptune_run_id = None
 
     # --- Testing Phase ---
     if args.do_test:
-        test(args, device)
+        test(args, neptune_run_id)
