@@ -16,7 +16,8 @@ dependencies = [
     "tqdm",
     "torch",
     "torchvision",
-    "pydantic"
+    "pydantic",
+    "neptune",
 ]
 
 

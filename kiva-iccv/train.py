@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime
 
+import neptune
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -239,6 +240,42 @@ def evaluate(
     return accuracy
 
 
+def init_neptune(config: Config, experiment_type: str):
+    """Initialize Neptune logging."""
+    neptune_run = None
+    if not config.use_neptune:
+        return None
+
+    if not config.neptune_api_token:
+        raise ValueError(
+            "⚠️  Neptune API token not provided. Please provide it with the --neptune_api_token "
+            "flag or set the NEPTUNE_API_TOKEN environment variable."
+        )
+
+    neptune_run = neptune.init_run(
+        project=config.neptune_project,
+        api_token=config.neptune_api_token,
+        name=f"kiva-iccv-{experiment_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        tags=["visual-analogy", "siamese-network"],
+    )
+
+    # Log configuration parameters
+    neptune_run["parameters"] = {
+        "loss_type": config.loss_type,
+        "margin": config.margin,
+        "embedding_dim": config.embedding_dim,
+        "transformation_net": config.transformation_net,
+        "freeze_encoder": config.freeze_encoder,
+        "learning_rate": config.learning_rate,
+        "batch_size": config.batch_size,
+        "epochs": config.epochs,
+        "num_workers": config.num_workers,
+    }
+
+    print(f"🔗 Neptune logging enabled: {neptune_run.get_url()}")
+    return neptune_run
+
+
 def train(args, device: torch.device) -> None:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
@@ -266,7 +303,10 @@ def train(args, device: torch.device) -> None:
         num_workers=train_config.num_workers,
     )
 
-    # 2. Initialize model, loss, and optimizer
+    # 2. Initialize Neptune logging
+    neptune_run = init_neptune(train_config, "train")
+
+    # Initialize model, loss, and optimizer
     model = SiameseAnalogyNetwork(
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
@@ -341,6 +381,14 @@ def train(args, device: torch.device) -> None:
             f" | Validation Accuracy: {val_accuracy:.2f}%"
         )
 
+        # Log to Neptune if enabled
+        if neptune_run:
+            neptune_run["training/epoch"].append(epoch + 1)
+            neptune_run["training/train_loss"].append(avg_train_loss)
+            neptune_run["training/train_accuracy"].append(train_accuracy)
+            neptune_run["training/val_accuracy"].append(val_accuracy)
+            neptune_run["training/learning_rate"].append(train_config.learning_rate)
+
         # --- 💾 Save the best model ---
         if val_accuracy > best_accuracy:
             best_accuracy = val_accuracy
@@ -349,6 +397,16 @@ def train(args, device: torch.device) -> None:
             print(f"✨ New best model saved with accuracy: {best_accuracy:.2f}%")
 
     print("🏁 Training finished.")
+
+    # Log final results to Neptune if enabled
+    if neptune_run:
+        neptune_run["training/final_train_loss"] = avg_train_loss
+        neptune_run["training/final_train_accuracy"] = train_accuracy
+        neptune_run["training/best_val_accuracy"] = best_accuracy
+        neptune_run["training/total_parameters"] = sum(p.numel() for p in model.parameters())
+        neptune_run["training/model_save_path"] = train_config.model_save_path
+        neptune_run.stop()
+        print("🔗 Neptune run completed and stopped")
 
     # Log experiment results
     log_experiment_results(
@@ -368,6 +426,9 @@ def test(args, device: torch.device) -> None:
     test_data_dir, test_meta_path = get_dataset_paths(args.test_on)
     test_config = create_config_from_args(args, test_data_dir, test_meta_path)
     test_config.device = str(device)
+
+    # Initialize Neptune logging
+    neptune_run = init_neptune(test_config, "test")
 
     # 1. Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(
@@ -390,6 +451,14 @@ def test(args, device: torch.device) -> None:
         model, test_loader, device, save_predictions=True, dataset=test_dataset
     )
     print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
+
+    # Log test results to Neptune if enabled
+    if neptune_run:
+        neptune_run["testing/test_accuracy"] = test_accuracy
+        neptune_run["testing/total_parameters"] = sum(p.numel() for p in model.parameters())
+        neptune_run["testing/model_path"] = test_config.model_save_path
+        neptune_run.stop()
+        print("🔗 Neptune test run completed and stopped")
 
     # Log test results
     log_experiment_results(

@@ -1,4 +1,5 @@
 import argparse
+import os
 from typing import Literal
 
 import torch
@@ -13,7 +14,7 @@ class Config(BaseModel):
     metadata_path: str
 
     # Loss
-    loss_type: Literal["standard_triplet", "contrastive"] = "contrastive"
+    loss_type: Literal["standard_triplet", "contrastive"] = "standard_triplet"
     margin: float = 0.5
 
     # Model & Training
@@ -26,6 +27,11 @@ class Config(BaseModel):
     num_workers: int = 4
     device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
     model_save_path: str = "./models/best_analogy_model.pth"
+
+    # Neptune logging
+    use_neptune: bool = False
+    neptune_project: str = "jsalvasoler/kiva-iccv"
+    neptune_api_token: str = ""
 
 
 def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
@@ -43,6 +49,9 @@ def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
         "epochs": args.epochs,
         "num_workers": args.num_workers,
         "model_save_path": args.model_save_path,
+        "use_neptune": args.use_neptune,
+        "neptune_project": args.neptune_project or os.getenv("NEPTUNE_PROJECT", ""),
+        "neptune_api_token": args.neptune_api_token or os.getenv("NEPTUNE_API_TOKEN", ""),
     }
 
     # Convert to Config object
@@ -111,5 +120,9 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="./models/best_analogy_model.pth",
         help="Model save path",
     )
+
+    parser.add_argument("--use_neptune", action="store_true", help="Use Neptune for logging")
+    parser.add_argument("--neptune_project", type=str, default="", help="Neptune project")
+    parser.add_argument("--neptune_api_token", type=str, default="", help="Neptune API token")
 
     return parser
