@@ -1,22 +1,27 @@
 # train_analogy.py
 
+import argparse
+import json
+import os
+from typing import Literal
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
-import torchvision.transforms as transforms
-from torch.utils.data import Dataset, DataLoader
+from dataset import VisualAnalogyDataset, get_dataset_paths
+from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
 from pydantic import BaseModel
-from pathlib import Path
-import json
-from PIL import Image
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-import argparse
-import os
-import random
-from typing import Literal
-from dataset import get_dataset_paths, VisualAnalogyDataset
-from loss import StandardTripletAnalogyLoss
+
+# Set random seeds for reproducibility
+torch.manual_seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 
 class Config(BaseModel):
@@ -26,20 +31,23 @@ class Config(BaseModel):
     data_dir: str
     metadata_path: str
 
+    # Loss
+    loss_type: Literal["standard_triplet", "contrastive"] = "contrastive"
+    margin: float = 0.5
+
     # Model & Training
     embedding_dim: int = 512
     freeze_encoder: bool = False
-    margin: float = 1.0
     learning_rate: float = 1e-4
-    batch_size: int = 32
+    batch_size: int = 64
     epochs: int = 5
-    num_workers: int = 2
+    num_workers: int = 4
     device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
     model_save_path: str = "./models/best_analogy_model.pth"
 
 
 class SiameseAnalogyNetwork(nn.Module):
-    def __init__(self, embedding_dim: int = 512, freeze_encoder: bool = True):
+    def __init__(self, embedding_dim: int = 512, freeze_encoder: bool = False):
         super().__init__()
         resnet = models.resnet18(weights="IMAGENET1K_V1")
         self.encoder = nn.Sequential(*list(resnet.children())[:-1])
@@ -66,16 +74,33 @@ class SiameseAnalogyNetwork(nn.Module):
         choice_b: torch.Tensor,
         choice_c: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
-        # Calculate the transformation vector for the main example
-        t_example = self._get_transformation_vec(ex_before, ex_after)
+        # Determine the batch size from one of the tensors
+        batch_size = ex_before.size(0)
 
-        # Calculate the transformation vectors for each of the three choices
-        t_choice_a = self._get_transformation_vec(test_before, choice_a)
-        t_choice_b = self._get_transformation_vec(test_before, choice_b)
-        t_choice_c = self._get_transformation_vec(test_before, choice_c)
+        # Reshape all tensors into a single batch, preserving the C, H, W dimensions
+        # and stacking along a new dimension (dim=0)
+        all_tensors = torch.cat(
+            [ex_before, ex_after, test_before, choice_a, choice_b, choice_c], dim=0
+        )
 
-        # Return all the vectors. The loss function will handle the comparison.
-        return t_example, t_choice_a, t_choice_b, t_choice_c
+        # Process the combined batch
+        all_embeddings = self.projection(self.encoder(all_tensors).flatten(1))
+
+        # Split the embeddings back based on the batch size
+        t_ex_before = all_embeddings[0 * batch_size : 1 * batch_size]
+        t_ex_after = all_embeddings[1 * batch_size : 2 * batch_size]
+        t_test_before = all_embeddings[2 * batch_size : 3 * batch_size]
+        t_choice_a = all_embeddings[3 * batch_size : 4 * batch_size]
+        t_choice_b = all_embeddings[4 * batch_size : 5 * batch_size]
+        t_choice_c = all_embeddings[5 * batch_size : 6 * batch_size]
+
+        # Calculate the transformation vectors
+        t_example = t_ex_after - t_ex_before
+        t_choice_a_vec = t_choice_a - t_test_before
+        t_choice_b_vec = t_choice_b - t_test_before
+        t_choice_c_vec = t_choice_c - t_test_before
+
+        return t_example, t_choice_a_vec, t_choice_b_vec, t_choice_c_vec
 
 
 def evaluate(
@@ -95,7 +120,7 @@ def evaluate(
     predictions = []
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating"):
+        for batch in tqdm(dataloader, desc="  -- Evaluating --   "):
             (
                 ex_before,
                 ex_after,
@@ -143,9 +168,7 @@ def evaluate(
                     predicted_choice = choice_map[pred_idx.item()]
                     # Use the sample_id from the batch
                     batch_sample_id = sample_id[i]
-                    predictions.append(
-                        {"id": batch_sample_id, "answer": predicted_choice}
-                    )
+                    predictions.append({"id": batch_sample_id, "answer": predicted_choice})
 
     accuracy = 100 * total_correct / total_samples
 
@@ -166,9 +189,7 @@ def train(args, device: torch.device) -> None:
     train_config = Config(
         data_dir=train_data_dir, metadata_path=train_meta_path, device=str(device)
     )
-    train_dataset = VisualAnalogyDataset(
-        train_config.data_dir, train_config.metadata_path
-    )
+    train_dataset = VisualAnalogyDataset(train_config.data_dir, train_config.metadata_path)
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config.batch_size,
@@ -194,11 +215,15 @@ def train(args, device: torch.device) -> None:
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
     ).to(device)
-    criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
+    if train_config.loss_type == "standard_triplet":
+        criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
+    elif train_config.loss_type == "contrastive":
+        criterion = ContrastiveAnalogyLoss(margin=train_config.margin)
     optimizer = optim.Adam(model.parameters(), lr=train_config.learning_rate)
 
     print(
-        f"\n🚀 Starting training on '{args.train_on}' dataset, validating on '{args.validate_on}'..."
+        f"\n🚀 Starting training on '{args.train_on}' dataset,"
+        f" validating on '{args.validate_on}'..."
     )
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters())}")
     best_accuracy = 0.0
@@ -234,7 +259,9 @@ def train(args, device: torch.device) -> None:
         # --- 💡 Validation at the end of each epoch ---
         val_accuracy = evaluate(model, val_loader, device)
         print(
-            f"Epoch {epoch + 1}/{train_config.epochs} - Train Loss: {avg_train_loss:.4f} | Validation Accuracy: {val_accuracy:.2f}%"
+            f"Epoch {epoch + 1}/{train_config.epochs}"
+            f" - Train Loss: {avg_train_loss:.4f}"
+            f" | Validation Accuracy: {val_accuracy:.2f}%"
         )
 
         # --- 💾 Save the best model ---
@@ -251,9 +278,7 @@ def test(args, device: torch.device) -> None:
     """Testing function that evaluates the trained model."""
     print(f"\n🧪 Starting testing on '{args.test_on}' dataset...")
     test_data_dir, test_meta_path = get_dataset_paths(args.test_on)
-    test_config = Config(
-        data_dir=test_data_dir, metadata_path=test_meta_path, device=str(device)
-    )
+    test_config = Config(data_dir=test_data_dir, metadata_path=test_meta_path, device=str(device))
 
     # 1. Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(embedding_dim=test_config.embedding_dim).to(device)

@@ -9,32 +9,32 @@ class ContrastiveAnalogyLoss(nn.Module):
 
     def forward(
         self,
-        t_example: torch.Tensor,
-        t_choice_a: torch.Tensor,
-        t_choice_b: torch.Tensor,
-        t_choice_c: torch.Tensor,
-        correct_idx: torch.Tensor,
+        model_outputs: tuple,
+        correct_indices: torch.Tensor,
     ) -> torch.Tensor:
+        # Unpack the vectors produced by the network
+        t_example, t_choice_a, t_choice_b, t_choice_c = model_outputs
+
         # Compute similarities between example transformation and each choice transformation
         sim_a = torch.cosine_similarity(t_example, t_choice_a, dim=1)
         sim_b = torch.cosine_similarity(t_example, t_choice_b, dim=1)
         sim_c = torch.cosine_similarity(t_example, t_choice_c, dim=1)
 
         # Get the positive (correct) similarity score
-        batch_size = correct_idx.shape[0]
+        batch_size = correct_indices.shape[0]
         positive_sim = torch.gather(
-            torch.stack([sim_a, sim_b, sim_c], dim=1), 1, correct_idx.unsqueeze(1)
+            torch.stack([sim_a, sim_b, sim_c], dim=1), 1, correct_indices.unsqueeze(1)
         ).squeeze(1)
 
-        # Get the two negative similarity scores
-        negative_sims = []
-        for i in range(batch_size):
-            neg_indices = [j for j in range(3) if j != correct_idx[i]]
-            neg_sim_1 = torch.stack([sim_a[i], sim_b[i], sim_c[i]])[neg_indices[0]]
-            neg_sim_2 = torch.stack([sim_a[i], sim_b[i], sim_c[i]])[neg_indices[1]]
-            negative_sims.append([neg_sim_1, neg_sim_2])
+        # Get the two negative similarity scores more efficiently
+        # Create a mask for incorrect choices
+        batch_indices = torch.arange(batch_size, device=correct_indices.device)
+        mask = torch.ones(batch_size, 3, dtype=torch.bool, device=correct_indices.device)
+        mask[batch_indices, correct_indices] = False
 
-        negative_sims = torch.stack(negative_sims)  # Shape: (batch_size, 2)
+        # Get the two negative similarities using the mask
+        all_sims = torch.stack([sim_a, sim_b, sim_c], dim=1)  # (batch_size, 3)
+        negative_sims = all_sims[mask].view(batch_size, 2)  # (batch_size, 2)
         sim_negative1 = negative_sims[:, 0]
         sim_negative2 = negative_sims[:, 1]
 

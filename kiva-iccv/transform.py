@@ -11,16 +11,16 @@ Break a sample of the KiVA dataset into 6 parts:
 """
 
 import json
-import tqdm
 import os
 from multiprocessing import Pool
-from typing import Tuple, Dict, Any
+
+import tqdm
 from PIL import Image
 
 
 def investigate_sizes(dataset_json_path: str) -> None:
     """Investigate image sizes in the dataset."""
-    with open(dataset_json_path, "r") as f:
+    with open(dataset_json_path) as f:
         dataset = json.load(f)
 
     sizes = []
@@ -33,7 +33,7 @@ def investigate_sizes(dataset_json_path: str) -> None:
     assert len(set(sizes)) == 1, "All images must have the same size"
 
 
-def split_kiva_image(img_path: str) -> Dict[str, Image.Image]:
+def split_kiva_image(img_path: str) -> dict[str, Image.Image]:
     """
     Splits a composite image from the KiVA dataset into its 6 logical parts.
 
@@ -102,7 +102,7 @@ def save_split_parts(img_path: str, output_dir: str) -> None:
         part_img.save(output_path)
 
 
-def process_single_image(args: Tuple[str, str, str]) -> None:
+def process_single_image(args: tuple[str, str, str]) -> None:
     """
     Process a single image - used by multiprocessing pool.
 
@@ -118,7 +118,7 @@ def transform_dataset(dataset_json_path: str, output_dir: str) -> None:
     """
     Transform the dataset into the new format using multiprocessing.
     """
-    with open(dataset_json_path, "r") as f:
+    with open(dataset_json_path) as f:
         dataset = json.load(f)
 
     # Get the dataset directory from the json path

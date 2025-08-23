@@ -1,12 +1,12 @@
-from pathlib import Path
-from typing import Dict, List, Tuple
+import json
+import os
 import random
+from pathlib import Path
+
+import torch
+from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-from PIL import Image
-import torch
-import os
-import json
 
 
 def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
@@ -43,12 +43,10 @@ class VisualAnalogyDataset(Dataset):
                 [
                     transforms.Resize((224, 224)),
                     transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                 ]
             )
-        with open(metadata_path, "r") as f:
+        with open(metadata_path) as f:
             self.metadata = json.load(f)
         self.sample_ids = list(self.metadata.keys())
         self.label_map = {"(A)": 0, "(B)": 1, "(C)": 2}
