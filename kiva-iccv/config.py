@@ -17,6 +17,7 @@ class Config(BaseModel):
     margin: float = 0.5
 
     # Model & Training
+    transformation_net: bool = False
     embedding_dim: int = 512
     freeze_encoder: bool = False
     learning_rate: float = 1e-4
@@ -34,6 +35,7 @@ def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
         "metadata_path": metadata_path,
         "loss_type": args.loss_type,
         "margin": args.margin,
+        "transformation_net": args.transformation_net,
         "embedding_dim": args.embedding_dim,
         "freeze_encoder": args.freeze_encoder,
         "learning_rate": args.learning_rate,
@@ -92,6 +94,9 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Loss type",
     )
     parser.add_argument("--margin", type=float, default=0.5, help="Margin for loss functions")
+    parser.add_argument(
+        "--transformation_net", action="store_true", help="Use transformation network"
+    )
     parser.add_argument("--embedding_dim", type=int, default=512, help="Embedding dimension")
     parser.add_argument("--freeze_encoder", action="store_true", help="Freeze encoder parameters")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
