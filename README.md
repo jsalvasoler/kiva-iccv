@@ -30,7 +30,16 @@ make fmt # format the code
 
 ### Load the data
 
-1. Load the basic competition data running the first two cells in the `notebook/KiVA_Challenge_Baseline.ipynb` notebook. This will create the `data/` directory with the following structure:
+1. Load the basic competition data running:
+
+```bash
+uv run python kiva-iccv/utils/download.py
+```
+
+This will create the `data/` directory with the following structure:
+
+**Note:** The `test` directory is not available yet. Will be released on September 1.
+
 ```
 data/
 ├── train/
@@ -45,10 +54,9 @@ data/
 
 2. Run the following commands to create the subimages that will be used by the model.
 ```bash
-uv run python kiva-iccv/transform.py --dataset train
-uv run python kiva-iccv/transform.py --dataset validation
-uv run python kiva-iccv/transform.py --dataset test
-uv run python kiva-iccv/transform.py --dataset unit
+for dataset in train validation test unit; do
+    uv run python kiva-iccv/utils/transform.py --dataset $dataset
+done
 ```
 
 3. After this, the `data/` directory will have the following structure:
@@ -74,7 +82,9 @@ data/
 │   ├── sample1_choice_b.jpg
 │   └── sample1_choice_c.jpg
 ├── split_validation/      # Split validation images
+|   └── ...
 ├── split_test/           # Split test images
+|   └── ...
 ├── train.json            # Training metadata
 ├── validation.json       # Validation metadata
 └── test.json            # Test metadata
