@@ -13,9 +13,15 @@ uv sync
 This will automatically install all dependencies from your `pyproject.toml` file.
 
 ### Useful commands and basic cli usage
+
+You can start by copying the `.env.example` file to `.env` and filling in the API token and project name.
+```bash
+cp .env.example .env
+```
+
 Main commands:
 ```
-uv run python kiva-iccv/train.py --do_train --do_test --epochs 30 --batch_size 64
+uv run --env-file .env python kiva-iccv/train.py --do_train --do_test --epochs 30 --batch_size 64
 ```
 For the full list of options, run `uv run python kiva-iccv/train.py --help`.
 

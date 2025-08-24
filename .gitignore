@@ -3,10 +3,14 @@ data/*
 notebook/*.svg
 notebook/*.json
 output/*
+.neptune/*
 
 # envs
 .venv/
 uv.lock
+
+# env files
+.env
 
 # python
 __pycache__/

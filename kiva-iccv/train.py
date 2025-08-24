@@ -67,6 +67,7 @@ def print_experiment_results(
     final_train_loss: float,
     final_train_accuracy: float,
     num_parameters: int,
+    num_trainable_parameters: int,
     experiment_type: str = "train",
     test_accuracy: float = None,
 ) -> None:
@@ -87,6 +88,7 @@ def print_experiment_results(
 
     # Print number of model parameters
     print(f"  {'Model parameters':<20} {num_parameters:,}")
+    print(f"  {'Trainable parameters':<20} {num_trainable_parameters:,}")
 
     # Print dataset info from args if available
     if hasattr(args, "train_on"):
@@ -372,6 +374,7 @@ def train(args) -> str:
         final_train_loss=avg_train_loss,
         final_train_accuracy=train_accuracy,
         num_parameters=sum(p.numel() for p in model.parameters()),
+        num_trainable_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad),
         experiment_type="train",
     )
 
@@ -446,6 +449,7 @@ def test(args, neptune_run_id: str | None) -> None:
         final_train_loss=0.0,  # Not applicable for test
         final_train_accuracy=0.0,  # Not applicable for test
         num_parameters=sum(p.numel() for p in model.parameters()),
+        num_trainable_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad),
         experiment_type="test",
         test_accuracy=test_accuracy,
     )
