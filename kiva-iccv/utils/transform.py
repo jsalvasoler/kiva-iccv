@@ -19,6 +19,31 @@ import tqdm
 from PIL import Image
 
 
+def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
+    """Returns the data directory and metadata path based on a keyword."""
+    base_data_path = "./data"
+    mapping = {
+        "unit": ("split_unit", "unit.json"),
+        "train": ("split_train", "train.json"),
+        "validation": ("split_validation", "validation.json"),
+        "validation_sample": ("split_validation", "validation.json"),
+        "test": ("split_test", "test.json"),
+    }
+    if dataset_keyword not in mapping:
+        raise ValueError(f"Invalid dataset keyword '{dataset_keyword}'.")
+    split_dir, meta_file = mapping[dataset_keyword]
+
+    data_dir = os.path.join(base_data_path, split_dir)
+    metadata_path = os.path.join(base_data_path, meta_file)
+
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"Data directory not found: {data_dir}")
+    if not os.path.isfile(metadata_path):
+        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+
+    return data_dir, metadata_path
+
+
 def investigate_sizes(dataset_json_path: str) -> None:
     """Investigate image sizes in the dataset."""
     with open(dataset_json_path) as f:

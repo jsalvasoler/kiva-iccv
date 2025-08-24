@@ -1,5 +1,4 @@
 import json
-import os
 import random
 from pathlib import Path
 
@@ -7,31 +6,6 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-
-
-def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
-    """Returns the data directory and metadata path based on a keyword."""
-    base_data_path = "./data"
-    mapping = {
-        "unit": ("split_unit", "unit.json"),
-        "train": ("split_train", "train.json"),
-        "validation": ("split_validation", "validation.json"),
-        "validation_sample": ("split_validation", "validation.json"),
-        "test": ("split_test", "test.json"),
-    }
-    if dataset_keyword not in mapping:
-        raise ValueError(f"Invalid dataset keyword '{dataset_keyword}'.")
-    split_dir, meta_file = mapping[dataset_keyword]
-
-    data_dir = os.path.join(base_data_path, split_dir)
-    metadata_path = os.path.join(base_data_path, meta_file)
-
-    if not os.path.isdir(data_dir):
-        raise FileNotFoundError(f"Data directory not found: {data_dir}")
-    if not os.path.isfile(metadata_path):
-        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
-
-    return data_dir, metadata_path
 
 
 class VisualAnalogyDataset(Dataset):

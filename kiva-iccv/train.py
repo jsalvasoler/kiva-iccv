@@ -8,11 +8,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from config import Config, create_argument_parser, create_config_from_args
-from dataset import VisualAnalogyDataset, get_dataset_paths
+from dataset import VisualAnalogyDataset
 from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
 from model import SiameseAnalogyNetwork
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from utils.evaluate import run_evaluation_analysis
+from utils.transform import get_dataset_paths
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
@@ -422,6 +424,10 @@ def test(args, neptune_run_id: str | None) -> None:
         model, test_loader, device, save_predictions=neptune_run is not None, dataset=test_dataset
     )
     print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
+
+    # 4. Run evaluation analysis if submission file was generated
+    if neptune_run is not None:
+        run_evaluation_analysis(args, args.test_on)
 
     # Log test results to Neptune if enabled
     if neptune_run:
