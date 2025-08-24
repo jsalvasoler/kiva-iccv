@@ -22,6 +22,7 @@ class Config(BaseModel):
     embedding_dim: int = 512
     freeze_encoder: bool = False
     learning_rate: float = 1e-4
+    weight_decay: float = 1e-5
     batch_size: int = 64
     epochs: int = 5
     num_workers: int = 4
@@ -44,6 +45,7 @@ def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
         "embedding_dim": args.embedding_dim,
         "freeze_encoder": args.freeze_encoder,
         "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "num_workers": args.num_workers,
@@ -112,6 +114,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embedding_dim", type=int, default=512, help="Embedding dimension")
     parser.add_argument("--freeze_encoder", action="store_true", help="Freeze encoder parameters")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--weight_decay", type=float, default=1e-5, help="Weight decay")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=5, help="Number of epochs")
     parser.add_argument(

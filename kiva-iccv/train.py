@@ -268,7 +268,9 @@ def train(args) -> str:
         criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
     elif train_config.loss_type == "contrastive":
         criterion = ContrastiveAnalogyLoss(margin=train_config.margin)
-    optimizer = optim.Adam(model.parameters(), lr=train_config.learning_rate)
+    optimizer = optim.Adam(
+        model.parameters(), lr=train_config.learning_rate, weight_decay=train_config.weight_decay
+    )
 
     print(
         f"\n🚀 Starting training on '{args.train_on}' dataset,"
