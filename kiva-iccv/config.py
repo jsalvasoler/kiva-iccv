@@ -18,7 +18,7 @@ class Config(BaseModel):
     margin: float = 0.5
 
     # Model & Training
-    transformation_net: bool = False
+    transformation_net: bool = True
     embedding_dim: int = 512
     freeze_encoder: bool = False
     learning_rate: float = 1e-4
