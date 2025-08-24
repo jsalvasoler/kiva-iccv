@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models
 
 
@@ -17,18 +18,27 @@ class SiameseAnalogyNetwork(nn.Module):
         if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
+            # Train the last layers of the last ResNet block (~2M parameters)
+            for param in self.encoder[7][1].conv2.parameters():  # conv
+                param.requires_grad = True
+            for param in self.encoder[7][1].bn2.parameters():  # batch norm
+                param.requires_grad = True
 
-        self.projection = nn.Linear(resnet.fc.in_features, embedding_dim)
+        self.projection = nn.Sequential(
+            nn.Linear(resnet.fc.in_features, embedding_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.LayerNorm(embedding_dim),
+        )
 
         self.transformation_net = (
             nn.Sequential(
-                nn.Linear(
-                    embedding_dim * 2, embedding_dim
-                ),  # Input is a concatenation of two embeddings
-                nn.ReLU(),
+                nn.Linear(embedding_dim * 2, embedding_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.2),
                 nn.Linear(embedding_dim, embedding_dim),
-                nn.ReLU(),
-                nn.Linear(embedding_dim, embedding_dim),
+                nn.LayerNorm(embedding_dim),
             )
             if transformation_net
             else None
@@ -65,14 +75,22 @@ class SiameseAnalogyNetwork(nn.Module):
 
         # Calculate the transformation vectors
         if self.transformation_net:
+            # NOTE: could also be a net like torch.cat([a, b, a * b, b - a], dim=-1) -> t_ab
             t_example = self.transformation_net(torch.cat([t_ex_before, t_ex_after], dim=1))
             t_choice_a_vec = self.transformation_net(torch.cat([t_test_before, t_choice_a], dim=1))
             t_choice_b_vec = self.transformation_net(torch.cat([t_test_before, t_choice_b], dim=1))
             t_choice_c_vec = self.transformation_net(torch.cat([t_test_before, t_choice_c], dim=1))
+
         else:
             t_example = t_ex_after - t_ex_before
             t_choice_a_vec = t_choice_a - t_test_before
             t_choice_b_vec = t_choice_b - t_test_before
             t_choice_c_vec = t_choice_c - t_test_before
+
+        # F.normalize for unit norm embeddings
+        t_example = F.normalize(t_example, p=2, dim=-1)
+        t_choice_a_vec = F.normalize(t_choice_a_vec, p=2, dim=-1)
+        t_choice_b_vec = F.normalize(t_choice_b_vec, p=2, dim=-1)
+        t_choice_c_vec = F.normalize(t_choice_c_vec, p=2, dim=-1)
 
         return t_example, t_choice_a_vec, t_choice_b_vec, t_choice_c_vec
