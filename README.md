@@ -104,3 +104,11 @@ Each sample requires 6 images:
 - `{sample_id}_choice_a.jpg` - Choice A image
 - `{sample_id}_choice_b.jpg` - Choice B image
 - `{sample_id}_choice_c.jpg` - Choice C image
+
+
+## KiVA Dataset Generation
+
+Clone the original KiVA repository as a submodule:
+```bash
+git submodule add https://github.com/ey242/KiVA.git
+```

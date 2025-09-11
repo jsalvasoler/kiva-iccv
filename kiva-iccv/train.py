@@ -228,7 +228,7 @@ def init_neptune(config: Config, args, experiment_type: str):
     return neptune_run
 
 
-def train(args) -> str:
+def train(args) -> str | None:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
     train_data_dir, train_meta_path = get_dataset_paths(args.train_on)
@@ -283,6 +283,10 @@ def train(args) -> str:
     print(f"Number of parameters: {total_params}")
     print(f"Number of trainable parameters: {trainable_params}")
     best_accuracy = 0.0
+
+    if train_config.epochs == 0:
+        print("Skipping training since epochs is 0.")
+        return None
 
     # 3. Training Loop
     for epoch in range(train_config.epochs):

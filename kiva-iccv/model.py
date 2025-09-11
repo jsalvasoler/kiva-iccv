@@ -18,11 +18,13 @@ class SiameseAnalogyNetwork(nn.Module):
         if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
-            # Train the last layers of the last ResNet block (~2M parameters)
-            for param in self.encoder[7][1].conv2.parameters():  # conv
-                param.requires_grad = True
-            for param in self.encoder[7][1].bn2.parameters():  # batch norm
-                param.requires_grad = True
+
+            # ruff: noqa: ERA001
+            # # Train the last layers of the last ResNet block (~2M parameters)
+            # for param in self.encoder[7][1].conv2.parameters():  # conv
+            #     param.requires_grad = True
+            # for param in self.encoder[7][1].bn2.parameters():  # batch norm
+            #     param.requires_grad = True
 
         self.projection = nn.Sequential(
             nn.Linear(resnet.fc.in_features, embedding_dim),
