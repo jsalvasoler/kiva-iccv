@@ -209,11 +209,13 @@ class OnTheFlyKiVADataset(Dataset):
             "Rotation": _apply_rotation,
         }
 
+        # normalize distribution config
+        distribution_config = {
+            k: v / sum(distribution_config.values()) for k, v in distribution_config.items()
+        }
+
         self.rules = list(distribution_config.keys())
         self.weights = list(distribution_config.values())
-        if not (0.999 < sum(self.weights) < 1.001):
-            raise ValueError(f"Probabilities must sum to 1, but they sum to {sum(self.weights)}")
-
         self.base_canvas_transform = transforms.Resize((600, 600), antialias=True)
 
         self.param_options = {
@@ -373,23 +375,24 @@ class OnTheFlyKiVADataset(Dataset):
 
 
 if __name__ == "__main__":
-    # --- Define the distribution from your table ---
-    raw_counts = {
-        "kiva-Counting": 64,
-        "kiva-Reflect": 32,
-        "kiva-Resizing": 32,
-        "kiva-Rotation": 48,
-        "kiva-functions-Counting": 128,
-        "kiva-functions-Reflect": 32,
-        "kiva-functions-Resizing": 96,
-        "kiva-functions-Rotation": 112,
-        "kiva-functions-compositionality-Counting,Reflect": 256,
-        "kiva-functions-compositionality-Counting,Resizing": 768,
-        "kiva-functions-compositionality-Counting,Rotation": 896,
-        "kiva-functions-compositionality-Reflect,Resizing": 192,
-        "kiva-functions-compositionality-Resizing,Rotation": 96,
-    }
-    raw_counts = {
+    # ruff: noqa: ERA001
+    # # --- Define the distribution from your table ---
+    # distribution = {
+    #     "kiva-Counting": 64,
+    #     "kiva-Reflect": 32,
+    #     "kiva-Resizing": 32,
+    #     "kiva-Rotation": 48,
+    #     "kiva-functions-Counting": 128,
+    #     "kiva-functions-Reflect": 32,
+    #     "kiva-functions-Resizing": 96,
+    #     "kiva-functions-Rotation": 112,
+    #     "kiva-functions-compositionality-Counting,Reflect": 256,
+    #     "kiva-functions-compositionality-Counting,Resizing": 768,
+    #     "kiva-functions-compositionality-Counting,Rotation": 896,
+    #     "kiva-functions-compositionality-Reflect,Resizing": 192,
+    #     "kiva-functions-compositionality-Resizing,Rotation": 96,
+    # }
+    distribution = {
         "kiva-Counting": 1,
         "kiva-Reflect": 0,
         "kiva-Resizing": 0,
@@ -404,10 +407,6 @@ if __name__ == "__main__":
         "kiva-functions-compositionality-Reflect,Resizing": 0,
         "kiva-functions-compositionality-Resizing,Rotation": 0,
     }
-
-    # Normalize counts to get probabilities
-    total_count = sum(raw_counts.values())
-    distribution = {key: value / total_count for key, value in raw_counts.items()}
 
     print("\nUsing the following generation distribution:")
     for rule, prob in distribution.items():
