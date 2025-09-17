@@ -1,105 +1,8 @@
-import argparse
-import os
 import random
 
 import torch
-from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
-from torchvision.io import read_image
 from torchvision.transforms import functional as F
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Process images with specific transformations.")
-
-    parser.add_argument(
-        "--input_directory", type=str, help="Path to the input directory containing the images."
-    )
-    parser.add_argument(
-        "--output_directory",
-        type=str,
-        help="Path to the output directory where processed images will be saved.",
-    )
-    parser.add_argument(
-        "--next_index", type=int, default=0, help="The starting index for naming the output files."
-    )
-    parser.add_argument("--trials", type=int, default=1, help="The number of trials to run.")
-    parser.add_argument(
-        "--transformation",
-        type=str,
-        choices=["Colour", "Counting", "Reflect", "Resize", "2DRotation"],
-        help="The transformation to apply to the images.",
-    )
-    parser.add_argument("--parameter", type=str, help="The parameter for the transformation.")
-    parser.add_argument(
-        "--shuffle", type=bool, default=False, help="To shuffle the objects dataset."
-    )
-    return parser.parse_args()
-
-
-# ------------------------------------------------------------------------------------------------
-
-args = parse_arguments()
-
-args.output_directory = os.path.join(
-    args.output_directory, f"{args.transformation}{args.parameter}"
-)
-
-if not os.path.exists(args.output_directory):
-    os.makedirs(args.output_directory)
-
-
-class Objects(Dataset):
-    def __init__(self, img_dir, transform=None):
-        self.img_dir = img_dir
-        self.transform = transform
-        self.image_files = [
-            file for file in os.listdir(img_dir) if file.endswith(("png", "jpg", "jpeg"))
-        ]
-
-    def __len__(self):
-        return len(self.image_files)
-
-    def __getitem__(self, idx):
-        img_path = os.path.join(self.img_dir, self.image_files[idx])
-        image = read_image(img_path)
-        if self.transform:
-            image = self.transform(image)
-        return image
-
-
-if args.transformation == "Resize":
-    base_transform = transforms.Compose([transforms.Resize((300, 300), antialias=True)])
-else:
-    base_transform = transforms.Compose(
-        [
-            transforms.Resize((600, 600), antialias=True),
-        ]
-    )
-
-# Initialize dataset
-dataset = Objects(img_dir=args.input_directory, transform=base_transform)
-
-# Define trial splits for train and test
-total_images = len(dataset)
-trials = args.trials if args.trials else total_images // 2
-if trials > total_images // 2 or trials <= 0:
-    raise ValueError(f"The maximum number of trials possible is {total_images // 2}.")
-
-# Shuffle Objects if decided upon
-indices = list(range(total_images))
-if args.shuffle:
-    random.shuffle(indices)
-
-# Define train and test sets using shuffled indices
-train_indices = indices[:trials]
-test_indices = indices[trials : 2 * trials]
-
-train_set = Subset(dataset, train_indices)
-test_set = Subset(dataset, test_indices)
-
-train_loader = DataLoader(train_set, batch_size=1, shuffle=True)
-test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
 # -----------------------------------------------------
 # Transformation functions
@@ -158,14 +61,14 @@ def apply_color(image, target_color, type, initial_color=None):
     incorrect_image = color_overlap(image, incorrect_color)
 
     if type == "train":
-        return initial_image, correct_image, initial_color, args.parameter
+        return initial_image, correct_image, initial_color, target_color
     elif type == "test":
         return (
             initial_image,
             correct_image,
             incorrect_image,
             initial_color,
-            args.parameter,
+            target_color,
             incorrect_color,
         )
 
@@ -250,13 +153,17 @@ def apply_reflection(image, parameter, type):
         correct_image = F.hflip(image)
         incorrect_image = F.vflip(image)  # Flip along the X-axis for incorrect
         incorrect_option = "X"
+    elif parameter == "":
+        correct_image = image
+        incorrect_image = F.vflip(image)
+        incorrect_option = "X"
     else:
         raise ValueError("Invalid reflect factor. Choose from 'X' or 'Y'.")
 
     if type == "train":
-        return correct_image, 0, args.parameter
+        return correct_image, 0, parameter
     elif type == "test":
-        return correct_image, incorrect_image, 0, args.parameter, incorrect_option
+        return correct_image, incorrect_image, 0, parameter, incorrect_option
 
 
 def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
@@ -293,8 +200,12 @@ def apply_resizing(image, factor, type):
         correct_resize_factor = 2.0
         incorrect_resize_factor = 0.5
         incorrect_option = "0.5XY"
+    elif factor == "XY":
+        correct_resize_factor = 1.0
+        incorrect_resize_factor = 1.0
+        incorrect_option = "2XY"
     else:
-        raise ValueError("Invalid resize factor. Choose from '0.5XY' or '2XY'.")
+        raise ValueError(f"Invalid resize factor: {factor}. Choose from '0.5XY' or '2XY'.")
 
     new_width, new_height = image.shape[2], image.shape[1]  # Original dimensions
 
@@ -312,9 +223,9 @@ def apply_resizing(image, factor, type):
     )(image)
 
     if type == "train":
-        return correct_image, 0, args.parameter
+        return correct_image, 0, factor
     elif type == "test":
-        return correct_image, incorrect_image, 0, args.parameter, incorrect_option
+        return correct_image, incorrect_image, 0, factor, incorrect_option
 
 
 def apply_rotation(image, angle, type):
@@ -355,166 +266,3 @@ def apply_rotation(image, angle, type):
         return correct_image, 0, final_correct_angle
     elif type == "test":
         return correct_image, incorrect_image, 0, final_correct_angle, final_incorrect_angle
-
-
-def save_values_to_txt(
-    index, initial_train, output_train, initial_test, correct_test, incorrect_test
-):
-    """
-    Args:
-        initial_train (str): Initial value for train input.
-        output_train (str): Output value for train output.
-        initial_test (str): Initial value for test input.
-        correct_test (str): Correct value for test output.
-        incorrect_test (str): Incorrect value for test output.
-    """
-    with open(
-        f"{args.output_directory}/output_{args.transformation}{args.parameter}.txt", "a"
-    ) as file:
-        file.write(f"Trial: {index}\n")
-        file.write(f"Train_input: {initial_train}\n")
-        file.write(f"Train_output: {output_train}\n")
-        file.write(f"Test_input: {initial_test}\n")
-        file.write(f"Test_correct_output: {correct_test}\n")
-        file.write(f"Test_incorrect_output: {incorrect_test}\n")
-
-
-train_iter = iter(train_loader)
-test_iter = iter(test_loader)
-
-i = 0  # General index for file naming
-
-while True:
-    try:
-        # Process one item from train_loader
-        original_image = next(train_iter)[0]
-        transformation = args.transformation
-
-        if transformation == "Colour":
-            original_image, correct_image, train_input, train_output = apply_color(
-                original_image, args.parameter, type="train"
-            )
-        elif transformation == "Counting":
-            original_image, correct_image, train_input, train_output = apply_counting(
-                original_image, args.parameter, type="train"
-            )
-        elif transformation == "Reflect":
-            correct_image, train_input, train_output = apply_reflection(
-                original_image, args.parameter, type="train"
-            )
-        elif transformation == "Resize":
-            correct_image, train_input, train_output = apply_resizing(
-                original_image, args.parameter, type="train"
-            )
-        elif transformation == "2DRotation":
-            correct_image, train_input, train_output = apply_rotation(
-                original_image, args.parameter, type="train"
-            )
-
-        if transformation == "Resize":
-            transforms.ToPILImage()(paste_on_600(original_image, 600)).save(
-                os.path.join(
-                    args.output_directory, f"{transformation}{args.parameter}_{i}_train_0_input.png"
-                )
-            )
-            transforms.ToPILImage()(paste_on_600(correct_image, 600)).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_train_0_output.png",
-                )
-            )
-        else:
-            transforms.ToPILImage()(original_image).save(
-                os.path.join(
-                    args.output_directory, f"{transformation}{args.parameter}_{i}_train_0_input.png"
-                )
-            )
-            transforms.ToPILImage()(correct_image).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_train_0_output.png",
-                )
-            )
-
-        # Process one item from test_loader
-        original_image = next(test_iter)[0]
-
-        if transformation == "Colour":
-            (
-                original_image,
-                correct_image,
-                incorrect_image,
-                test_input,
-                correct_option,
-                incorrect_option,
-            ) = apply_color(original_image, args.parameter, type="test", initial_color=train_input)
-        elif transformation == "Counting":
-            (
-                original_image,
-                correct_image,
-                incorrect_image,
-                test_input,
-                correct_option,
-                incorrect_option,
-            ) = apply_counting(
-                original_image, args.parameter, type="test", initial_count=train_input
-            )
-        elif transformation == "Reflect":
-            correct_image, incorrect_image, test_input, correct_option, incorrect_option = (
-                apply_reflection(original_image, args.parameter, type="test")
-            )
-        elif transformation == "Resize":
-            correct_image, incorrect_image, test_input, correct_option, incorrect_option = (
-                apply_resizing(original_image, args.parameter, type="test")
-            )
-        elif transformation == "2DRotation":
-            correct_image, incorrect_image, test_input, correct_option, incorrect_option = (
-                apply_rotation(original_image, args.parameter, type="test")
-            )
-
-        if transformation == "Resize":
-            transforms.ToPILImage()(paste_on_600(original_image, 600)).save(
-                os.path.join(
-                    args.output_directory, f"{transformation}{args.parameter}_{i}_test_0_input.png"
-                )
-            )
-            transforms.ToPILImage()(paste_on_600(correct_image, 600)).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_test_mc_0_input.png",
-                )
-            )
-            transforms.ToPILImage()(paste_on_600(incorrect_image, 600)).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_test_mc_1_input.png",
-                )
-            )
-        else:
-            transforms.ToPILImage()(original_image).save(
-                os.path.join(
-                    args.output_directory, f"{transformation}{args.parameter}_{i}_test_0_input.png"
-                )
-            )
-            transforms.ToPILImage()(correct_image).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_test_mc_0_input.png",
-                )
-            )
-            transforms.ToPILImage()(incorrect_image).save(
-                os.path.join(
-                    args.output_directory,
-                    f"{transformation}{args.parameter}_{i}_test_mc_1_input.png",
-                )
-            )
-
-        save_values_to_txt(
-            i, train_input, train_output, test_input, correct_option, incorrect_option
-        )
-
-        i += 1
-
-    except StopIteration:
-        print(f"✓ Generated {i} trial(s) for {transformation}{args.parameter}.")
-        break
