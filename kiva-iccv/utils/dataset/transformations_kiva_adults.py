@@ -164,8 +164,12 @@ def apply_reflection(image, parameter, type="train"):
         correct_image = F.hflip(F.vflip(image))  # Reflect across both X- and Y-axes
         incorrect_option = random.choice(["X", "Y"])
         incorrect_image = F.hflip(image) if incorrect_option == "X" else F.vflip(image)
+    elif parameter == "":
+        correct_image = image
+        incorrect_image = F.vflip(image)
+        incorrect_option = random.choice(["X", "Y", "XY"])
     else:
-        raise ValueError("Invalid reflect factor. Choose from 'X', 'Y', or 'XY'.")
+        raise ValueError("Invalid reflect factor. Choose from 'X', 'Y', 'XY', or ''.")
 
     if type == "train":
         return correct_image, image, 0, parameter
@@ -191,7 +195,167 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
     return F.pad(img, (pad_left, pad_top, pad_right, pad_bottom), fill=255)
 
 
-def apply_resizing(image, factor, type="train"):
+def apply_resizing(image, factor: str, type="train"):
+    """
+    Applies a specified resizing transformation to an image.
+
+    This generalized version can handle factors like '0.8X', '1.2Y', '1.5XY', etc.
+    It dynamically parses the factor string to determine the scale and axis.
+
+    Args:
+        image (torch.Tensor): The input image tensor (C, H, W).
+        factor (str): The resizing factor string, e.g., "0.8X", "1.2Y", "1.5XY".
+                      It consists of a float followed by 'X', 'Y', or 'XY'.
+        type (str, optional): The mode of operation.
+                               - "train": Returns the correctly resized image and its label.
+                               - "test": Returns the correct image, an incorrect alternative,
+                                         and their respective labels. Defaults to "train".
+
+    Returns:
+        - if type is "train": (correct_image, 0, factor)
+        - if type is "test": (correct_image, incorrect_image, 0, factor, incorrect_option)
+    """
+    print(f"DEBUG: factor: {factor}")
+    # --- 1. Parse the factor string to get scale and axis ---
+    try:
+        if factor.endswith("XY"):
+            scale = float(factor[:-2])
+            axis = "XY"
+        elif factor.endswith("X"):
+            scale = float(factor[:-1])
+            axis = "X"
+        elif factor.endswith("Y"):
+            scale = float(factor[:-1])
+            axis = "Y"
+        else:
+            # This case will be caught by the ValueError below if no match
+            raise ValueError
+    except (ValueError, IndexError) as e:
+        raise ValueError(
+            "Invalid resize factor format. "
+            "Expected a float followed by 'X', 'Y', or 'XY'. "
+            "Examples: '0.8X', '1.2Y', '1.5XY'."
+        ) from e
+
+    print(f"DEBUG: scale: {scale}, axis: {axis}")
+
+    # --- 2. Handle the pre-enlarging step for downscaling ---
+    # This logic is kept from the original to potentially improve downscaling quality.
+    base_img = image
+    # if scale < 1.0:
+    #     H, W = image.shape[1:]
+    #     base_img = F.resize(image, (int(H / scale), int(W / scale)), antialias=True)
+
+    # --- 3. Determine correct and incorrect transformation parameters ---
+    if axis == "XY":
+        correct_resize_factors = (scale, scale)
+        # For symmetric scaling, the incorrect option is the reciprocal
+        incorrect_scale = 1.0 / scale
+        incorrect_resize_factors = (incorrect_scale, incorrect_scale)
+        # Format to 2 decimal places for a clean label
+        incorrect_option = f"{incorrect_scale:.2f}XY"
+    elif axis == "X":
+        correct_resize_factors = (scale, 1.0)
+        # For asymmetric scaling, the incorrect option is scaling the other axis
+        incorrect_resize_factors = (1.0, scale)
+        incorrect_option = f"{scale}Y"
+    elif axis == "Y":
+        correct_resize_factors = (1.0, scale)
+        # For asymmetric scaling, the incorrect option is scaling the other axis
+        incorrect_resize_factors = (scale, 1.0)
+        incorrect_option = f"{scale}X"
+
+    # --- 4. Calculate new dimensions and apply transformations ---
+    new_width, new_height = base_img.shape[2], base_img.shape[1]
+
+    # Remember: transforms.Resize expects (height, width)
+    correct_new_height = int(new_height * correct_resize_factors[1])
+    correct_new_width = int(new_width * correct_resize_factors[0])
+
+    print(f"DEBUG: new_height: {new_height}, new_width: {new_width}")
+    print(f"DEBUG: correct_resize_factors: {correct_resize_factors}")
+    print(f"DEBUG: correct_new_height: {correct_new_height}, correct_new_width: {correct_new_width}")
+
+    incorrect_new_height = int(new_height * incorrect_resize_factors[1])
+    incorrect_new_width = int(new_width * incorrect_resize_factors[0])
+
+    correct_image = transforms.Resize((correct_new_height, correct_new_width), antialias=True)(
+        base_img
+    )
+
+    # --- 5. Return based on the specified type ---
+    if type == "train":
+        return correct_image, 0, factor
+
+    elif type == "test":
+        incorrect_image = transforms.Resize(
+            (incorrect_new_height, incorrect_new_width), antialias=True
+        )(base_img)
+        return correct_image, incorrect_image, 0, factor, incorrect_option
+
+if __name__ == "__main__":
+    import sys
+    sys.path.insert(0, "/home/ubuntu/kiva-iccv/kiva-iccv")
+    from utils.dataset.transformations_kiva_adults import apply_resizing_original, apply_resizing
+    from on_the_fly_dataset import OnTheFlyKiVADataset
+
+    DATA_DIR = "/home/ubuntu/kiva-iccv/data/KiVA/untransformed objects"
+    kiva_dataset = OnTheFlyKiVADataset(
+        data_dir=DATA_DIR,
+        distribution_config={"kiva-functions-Resizing": 1},
+        epoch_length=100,  # smaller epoch for quick demo
+    )
+
+
+    img = kiva_dataset._load_random_images(1, ["Resizing"])[0]
+
+    import torch
+    import matplotlib.pyplot as plt
+    import os
+    from torchvision.utils import make_grid
+    from torchvision.transforms.functional import to_pil_image
+
+    # Create debug directory if it doesn't exist
+    debug_dir = "debug_batch_images"
+    os.makedirs(debug_dir, exist_ok=True)
+
+    # Ensure img is in [0, 1] range for visualization
+    def normalize_img(img: torch.Tensor) -> torch.Tensor:
+        # If img is float and max > 1, scale to [0,1]
+        if img.dtype == torch.float32 or img.dtype == torch.float64:
+            if img.max() > 1.0:
+                return img / 255.0
+            else:
+                return img
+        # If img is uint8, convert to float and scale
+        elif img.dtype == torch.uint8:
+            return img.float() / 255.0
+        else:
+            return img
+
+    img_vis = normalize_img(img)
+    out, _, _ = apply_resizing(img, "0.5XY", "train")
+    out_vis = normalize_img(out)
+
+    # Compute difference image
+    diff = (out_vis - img_vis).abs()
+
+    # Normalize diff for visualization
+    diff_vis = (diff - diff.min()) / (diff.max() - diff.min() + 1e-8)
+
+    # Stack images for grid: original, resized, diff
+    images = torch.stack([img_vis, out_vis, diff_vis])
+
+    # Make grid (3 images in a row)
+    grid = make_grid(images, nrow=3, normalize=False)
+
+    # Save grid to file
+    grid_img = to_pil_image(grid)
+    grid_path = os.path.join(debug_dir, "resizing_debug_grid.png")
+    grid_img.save(grid_path)
+    print(f"Saved debug grid image to {grid_path}")
+
+def apply_resizing_original(image, factor, type="train"):
     enlarge_first = factor.startswith("0.5")
     base_img = image
     if enlarge_first:

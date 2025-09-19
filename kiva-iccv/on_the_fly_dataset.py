@@ -162,7 +162,7 @@ class OnTheFlyKiVADataset(Dataset):
             _, img_F_incorrect, _, _ = apply_counting(
                 img_C, incorrect_params[1], type="train", initial_count=start_count
             )
-        if rule == "Reflect":
+        elif rule == "Reflect":
             from utils.dataset.transformations_kiva import apply_reflection
 
             img_B_correct, _, _ = apply_reflection(img_A, true_param, type="train")
@@ -171,7 +171,7 @@ class OnTheFlyKiVADataset(Dataset):
             img_F_incorrect, _, _ = apply_reflection(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
 
-        if rule == "Resizing":
+        elif rule == "Resizing":
             from utils.dataset.transformations_kiva import apply_resizing
 
             img_B_correct, _, _ = apply_resizing(img_A, true_param, type="train")
@@ -180,7 +180,7 @@ class OnTheFlyKiVADataset(Dataset):
             img_F_incorrect, _, _ = apply_resizing(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
 
-        if rule == "Rotation":
+        elif rule == "Rotation":
             from utils.dataset.transformations_kiva import apply_rotation
 
             img_B_correct, _, _ = apply_rotation(img_A, true_param, type="train")
@@ -189,9 +189,98 @@ class OnTheFlyKiVADataset(Dataset):
             img_F_incorrect, _, _ = apply_rotation(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
 
+        else:
+            raise NotImplementedError(f"Rule {rule} is not implemented.")
+
         a, b, c = img_A_initial, img_B_correct, img_C_initial
         choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
 
+        sample_id = f"{rule}_{true_param}"
+        return a, b, c, choices, sample_id
+
+    def _generate_kiva_functions_level(self, rule: str) -> tuple:
+        # A->B :: C->D. Goal: Identify the same transformation (rule + parameter + values).
+        # A and C are different object identities but use the same starting values
+        # e.g. Counting+1: A=2->3, C=2->3 (same values, different objects)
+        img_A, img_C = self._load_random_images(2, [rule])
+
+        true_param = random.choice(self.param_options["kiva-functions"][rule])
+        print(f"DEBUG: True param: {true_param}")
+
+        # Ensure at least 2 other params are available for distractors
+        param_choices = [p for p in self.param_options["kiva-functions"][rule] if p != true_param]
+        if len(param_choices) < 2:
+            raise ValueError(
+                f"Rule {rule} needs at least 3 parameter options for kiva-functions level."
+            )
+        incorrect_params = random.sample(param_choices, 2)
+        print(f"DEBUG: Incorrect params: {incorrect_params}")
+
+        if rule == "Counting":
+            from utils.dataset.transformations_kiva_adults import apply_counting
+
+            img_A_initial, img_B_correct, _, _ = apply_counting(img_A, true_param, type="train")
+
+            # sample a random starting count from 1 to 9
+            start_count_test = random.randint(1, 9)
+
+            img_C_initial, img_D_correct, start_count_test, _ = apply_counting(
+                img_C, true_param, type="train", initial_count=start_count_test
+            )
+
+            img_E_incorrect, img_F_incorrect, _, _ = apply_counting(
+                img_C, incorrect_params[0], type="train", initial_count=start_count_test
+            )
+            img_E_incorrect, img_F_incorrect, _, _ = apply_counting(
+                img_C, incorrect_params[1], type="train", initial_count=start_count_test
+            )
+
+        elif rule == "Reflect":
+            from utils.dataset.transformations_kiva_adults import apply_reflection
+
+            # TODO: we could allow repetition
+            start_transformations = random.choices(["X", "Y", ""], k=2)
+            print(f"DEBUG: Start transformations: {start_transformations}")
+            img_A_initial, _, _, _ = apply_reflection(img_A, start_transformations[0], type="train")
+            img_B_correct, _, _, _ = apply_reflection(img_A_initial, true_param, type="train")
+
+            img_C_initial, _, _, _ = apply_reflection(img_C, start_transformations[1], type="train")
+            img_D_correct, _, _, _ = apply_reflection(img_C_initial, true_param, type="train")
+            img_E_incorrect, _, _, _ = apply_reflection(
+                img_C_initial, incorrect_params[0], type="train"
+            )
+            img_F_incorrect, _, _, _ = apply_reflection(
+                img_C_initial, incorrect_params[1], type="train"
+            )
+
+        elif rule == "Resizing":
+            from utils.dataset.transformations_kiva_adults import apply_resizing
+
+            start_transformation_options = [
+                "0.8XY",  # Symmetric Downscale
+                "0.8X",  # Asymmetric Downscale (Width)
+                "1.2XY",  # Symmetric Upscale
+                "1.2X",  # Asymmetric Upscale (Width)
+                "0.8Y",  # Asymmetric Downscale (Height)
+                "1.2Y",  # Asymmetric Upscale (Height)
+                "1XY",  # Identity (No change)
+            ]
+            # TODO: we could allow repetition
+            start_transformations = random.choices(start_transformation_options, k=2)
+            print(f"DEBUG: Start transformations: {start_transformations}")
+            img_A_initial, _, _ = apply_resizing(img_A, start_transformations[0], type="train")
+            img_B_correct, _, _ = apply_resizing(img_A_initial, true_param, type="train")
+
+            img_C_initial, _, _ = apply_resizing(img_C, start_transformations[1], type="train")
+            img_D_correct, _, _ = apply_resizing(img_C_initial, true_param, type="train")
+            img_E_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[1], type="train")
+
+        else:
+            raise NotImplementedError(f"Rule {rule} is not implemented.")
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
         sample_id = f"{rule}_{true_param}"
         return a, b, c, choices, sample_id
 
@@ -203,42 +292,7 @@ class OnTheFlyKiVADataset(Dataset):
             a, b, c, choices, sample_id = self._generate_kiva_level(rule)
 
         elif level == "kiva-functions":
-            # A->B :: C->D. Goal: Identify same rule, can be different params.
-            # Object identity changes.
-            img_A, img_C = self._load_random_images(2, [rule])
-
-            true_param_A = random.choice(self.param_options[rule])
-            true_param_C = random.choice(self.param_options[rule])  # Params can differ
-
-            transform_func = self.transformation_functions[rule]
-
-            # Create distractors from different transformation RULES
-            distractor_rules = random.sample([r for r in self.all_rules if r != rule], 2)
-
-            img_A_initial, img_B_correct = self._apply_and_get_images(
-                transform_func, img_A, true_param_A
-            )
-            img_C_initial, img_D_correct = self._apply_and_get_images(
-                transform_func, img_C, true_param_C
-            )
-
-            # Distractor 1
-            distractor_func_1 = self.transformation_functions[distractor_rules[0]]
-            distractor_param_1 = random.choice(self.param_options[distractor_rules[0]])
-            _, img_E_incorrect = self._apply_and_get_images(
-                distractor_func_1, img_C, distractor_param_1
-            )
-
-            # Distractor 2
-            distractor_func_2 = self.transformation_functions[distractor_rules[1]]
-            distractor_param_2 = random.choice(self.param_options[distractor_rules[1]])
-            _, img_F_incorrect = self._apply_and_get_images(
-                distractor_func_2, img_C, distractor_param_2
-            )
-
-            a, b, c = img_A_initial, img_B_correct, img_C_initial
-            choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
-            sample_id = f"{rule_str}"
+            a, b, c, choices, sample_id = self._generate_kiva_functions_level(rule)
 
         elif level == "kiva-functions-compositionality":
             # A->B :: C->D. Goal: Identify two rules applied in sequence. Object identity changes.
@@ -306,13 +360,13 @@ if __name__ == "__main__":
     #     "kiva-functions-compositionality-Resizing,Rotation": 96,
     # }
     distribution = {
-        "kiva-Counting": 1,
-        "kiva-Reflect": 1,
-        "kiva-Resizing": 1,
-        "kiva-Rotation": 1,
+        "kiva-Counting": 0,
+        "kiva-Reflect": 0,
+        "kiva-Resizing": 0,
+        "kiva-Rotation": 0,
         "kiva-functions-Counting": 0,
         "kiva-functions-Reflect": 0,
-        "kiva-functions-Resizing": 0,
+        "kiva-functions-Resizing": 1,
         "kiva-functions-Rotation": 0,
         "kiva-functions-compositionality-Counting,Reflect": 0,
         "kiva-functions-compositionality-Counting,Resizing": 0,
@@ -362,6 +416,7 @@ if __name__ == "__main__":
         ch3_batch[0],
     ]
     image_names = ["A", "B", "C", "choice1", "choice2", "choice3"]
+    import matplotlib.pyplot as plt
 
     # Denormalize for viewing
     mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -369,14 +424,24 @@ if __name__ == "__main__":
 
     sample_id_str = sample_ids[0].replace(",", "_")  # Sanitize filename
 
-    # Save each image separately
-    for _, (img, name) in enumerate(zip(first_sample_images, image_names, strict=False)):
-        # Denormalize the image
+    # Denormalize and convert all images to numpy arrays for plotting
+    denorm_images = []
+    for img in first_sample_images:
         denormalized_img = (img * std) + mean
-        # Convert to PIL and save
-        pil_img = transforms.ToPILImage()(denormalized_img.squeeze(0))
-        save_path = os.path.join(save_dir, f"{sample_id_str}_{name}.png")
-        pil_img.save(save_path)
-        print(f"Saved {name} image to: {save_path}")
+        np_img = denormalized_img.squeeze(0).clamp(0, 1).permute(1, 2, 0).cpu().numpy()
+        denorm_images.append(np_img)
+
+    # Create a grid (2 rows x 3 columns)
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+    for _, (ax, img, name) in enumerate(zip(axes.flat, denorm_images, image_names, strict=False)):
+        ax.imshow(img)
+        ax.set_title(name)
+        ax.axis("off")
+
+    plt.tight_layout()
+    grid_save_path = os.path.join(save_dir, f"{sample_id_str}_grid.png")
+    plt.savefig(grid_save_path)
+    plt.close(fig)
+    print(f"Saved grid image to: {grid_save_path}")
 
     print(f"Correct choice index for this sample is: {labels[0].item()}")

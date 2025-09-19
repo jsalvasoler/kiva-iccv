@@ -96,6 +96,18 @@ data/
 └── test.json            # Test metadata
 ```
 
+### Untransformed images for the on-the-fly dataset
+```bash
+mkdir -p KiVA
+mkdir -p data/KiVA
+cd KiVA
+git clone https://github.com/ey242/KiVA.git
+cp "KiVA/untransformed objects/" ../data/KiVA/
+cp "KiVA/transformed objects/" ../data/KiVA/
+cd ../
+rm -rf KiVA
+```
+
 ### Image Naming Convention
 Each sample requires 6 images:
 - `{sample_id}_ex_before.jpg` - Example "before" image
