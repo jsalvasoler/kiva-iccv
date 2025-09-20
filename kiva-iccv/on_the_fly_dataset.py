@@ -69,6 +69,16 @@ class OnTheFlyKiVADataset(Dataset):
                 "Rotation": ["+90", "-90", "180"],
             },
         }
+
+        self.start_transformation_options = {
+            "kiva-functions": {
+                "Counting": list(range(1, 10)),
+                "Reflect": ["X", "Y", ""],
+                "Resizing": ["0.8XY", "0.8X", "1.2XY", "1.2X", "0.8Y", "1.2Y", "1XY"],
+                "Rotation": ["+0", "+45", "-45", "+90", "-90", "+135", "-135"],
+            },
+        }
+
         self.param_options["kiva-functions-compositionality"] = self.param_options["kiva-functions"]
 
         self.all_rules = ["Counting", "Reflect", "Resizing", "Rotation"]
@@ -172,13 +182,21 @@ class OnTheFlyKiVADataset(Dataset):
             img_A_initial, img_C_initial = img_A, img_C
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva import apply_resizing
+            from utils.dataset.transformations_kiva import apply_resizing, paste_on_600
 
             img_B_correct, _, _ = apply_resizing(img_A, true_param, type="train")
             img_D_correct, _, _ = apply_resizing(img_C, true_param, type="train")
             img_E_incorrect, _, _ = apply_resizing(img_C, incorrect_params[0], type="train")
             img_F_incorrect, _, _ = apply_resizing(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
+
+            # finally paste everything on 600x600 canvas
+            img_A_initial = paste_on_600(img_A_initial)
+            img_B_correct = paste_on_600(img_B_correct)
+            img_C_initial = paste_on_600(img_C_initial)
+            img_D_correct = paste_on_600(img_D_correct)
+            img_E_incorrect = paste_on_600(img_E_incorrect)
+            img_F_incorrect = paste_on_600(img_F_incorrect)
 
         elif rule == "Rotation":
             from utils.dataset.transformations_kiva import apply_rotation
@@ -216,31 +234,32 @@ class OnTheFlyKiVADataset(Dataset):
         incorrect_params = random.sample(param_choices, 2)
         print(f"DEBUG: Incorrect params: {incorrect_params}")
 
+        start_transformations = random.choices(
+            self.start_transformation_options["kiva-functions"][rule], k=2
+        )
+        start_transformations = ["+0", "+0"]
+        print(f"DEBUG: Start transformations: {start_transformations}")
+
         if rule == "Counting":
             from utils.dataset.transformations_kiva_adults import apply_counting
 
-            img_A_initial, img_B_correct, _, _ = apply_counting(img_A, true_param, type="train")
-
-            # sample a random starting count from 1 to 9
-            start_count_test = random.randint(1, 9)
-
-            img_C_initial, img_D_correct, start_count_test, _ = apply_counting(
-                img_C, true_param, type="train", initial_count=start_count_test
+            img_A_initial, img_B_correct, _, _ = apply_counting(
+                img_A, true_param, type="train", initial_count=start_transformations[0]
+            )
+            img_C_initial, img_D_correct, _, _ = apply_counting(
+                img_C, true_param, type="train", initial_count=start_transformations[1]
             )
 
-            img_E_incorrect, img_F_incorrect, _, _ = apply_counting(
-                img_C, incorrect_params[0], type="train", initial_count=start_count_test
+            _, img_E_incorrect, _, _ = apply_counting(
+                img_C, incorrect_params[0], type="train", initial_count=start_transformations[1]
             )
-            img_E_incorrect, img_F_incorrect, _, _ = apply_counting(
-                img_C, incorrect_params[1], type="train", initial_count=start_count_test
+            _, img_F_incorrect, _, _ = apply_counting(
+                img_C, incorrect_params[1], type="train", initial_count=start_transformations[1]
             )
 
         elif rule == "Reflect":
             from utils.dataset.transformations_kiva_adults import apply_reflection
 
-            # TODO: we could allow repetition
-            start_transformations = random.choices(["X", "Y", ""], k=2)
-            print(f"DEBUG: Start transformations: {start_transformations}")
             img_A_initial, _, _, _ = apply_reflection(img_A, start_transformations[0], type="train")
             img_B_correct, _, _, _ = apply_reflection(img_A_initial, true_param, type="train")
 
@@ -254,20 +273,8 @@ class OnTheFlyKiVADataset(Dataset):
             )
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva_adults import apply_resizing
+            from utils.dataset.transformations_kiva_adults import apply_resizing, paste_on_600
 
-            start_transformation_options = [
-                "0.8XY",  # Symmetric Downscale
-                "0.8X",  # Asymmetric Downscale (Width)
-                "1.2XY",  # Symmetric Upscale
-                "1.2X",  # Asymmetric Upscale (Width)
-                "0.8Y",  # Asymmetric Downscale (Height)
-                "1.2Y",  # Asymmetric Upscale (Height)
-                "1XY",  # Identity (No change)
-            ]
-            # TODO: we could allow repetition
-            start_transformations = random.choices(start_transformation_options, k=2)
-            print(f"DEBUG: Start transformations: {start_transformations}")
             img_A_initial, _, _ = apply_resizing(img_A, start_transformations[0], type="train")
             img_B_correct, _, _ = apply_resizing(img_A_initial, true_param, type="train")
 
@@ -275,6 +282,42 @@ class OnTheFlyKiVADataset(Dataset):
             img_D_correct, _, _ = apply_resizing(img_C_initial, true_param, type="train")
             img_E_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[0], type="train")
             img_F_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[1], type="train")
+
+            # finally paste everything on 600x600 canvas
+            img_A_initial = paste_on_600(img_A_initial)
+            img_B_correct = paste_on_600(img_B_correct)
+            img_C_initial = paste_on_600(img_C_initial)
+            img_D_correct = paste_on_600(img_D_correct)
+            img_E_incorrect = paste_on_600(img_E_incorrect)
+            img_F_incorrect = paste_on_600(img_F_incorrect)
+
+        elif rule == "Rotation":
+            from utils.dataset.transformations_kiva_adults import apply_rotation
+
+            true_param = "180"
+            incorrect_params[0] = "+135"
+            incorrect_params[1] = "-90"
+            start_transformations[0] = "+0"
+            start_transformations[1] = "+0"
+
+            _, img_A_initial, _, _ = apply_rotation(
+                img_A, start_transformations[0], type="train", initial_rotation="+0"
+            )
+            _, img_B_correct, _, _ = apply_rotation(
+                img_A_initial, true_param, type="train", initial_rotation="+0"
+            )
+            _, img_C_initial, _, _ = apply_rotation(
+                img_C, start_transformations[1], type="train", initial_rotation="+0"
+            )
+            _, img_D_correct, _, _ = apply_rotation(
+                img_C_initial, true_param, type="train", initial_rotation="+0"
+            )
+            _, img_E_incorrect, _, _ = apply_rotation(
+                img_C_initial, incorrect_params[0], type="train", initial_rotation="+0"
+            )
+            _, img_F_incorrect, _, _ = apply_rotation(
+                img_C_initial, incorrect_params[1], type="train", initial_rotation="+0"
+            )
 
         else:
             raise NotImplementedError(f"Rule {rule} is not implemented.")
@@ -295,31 +338,7 @@ class OnTheFlyKiVADataset(Dataset):
             a, b, c, choices, sample_id = self._generate_kiva_functions_level(rule)
 
         elif level == "kiva-functions-compositionality":
-            # A->B :: C->D. Goal: Identify two rules applied in sequence. Object identity changes.
-            rule1, rule2 = rule.split(",")
-            img_A, img_C = self._load_random_images(2, [rule1, rule2])
-
-            func1 = self.transformation_functions[rule1]
-            param1 = random.choice(self.param_options[rule1])
-            func2 = self.transformation_functions[rule2]
-            param2 = random.choice(self.param_options[rule2])
-
-            # Generate A -> B
-            _, img_A_intermediate = self._apply_and_get_images(func1, img_A, param1)
-            _, img_B_final = self._apply_and_get_images(func2, img_A_intermediate, param2)
-
-            # Generate C -> D (Correct Choice)
-            _, img_C_intermediate = self._apply_and_get_images(func1, img_C, param1)
-            _, img_D_final = self._apply_and_get_images(func2, img_C_intermediate, param2)
-
-            # Generate Distractors (apply only one of the two transformations)
-            _, img_E_incorrect = self._apply_and_get_images(func1, img_C, param1)  # Only rule 1
-            _, img_F_incorrect = self._apply_and_get_images(func2, img_C, param2)  # Only rule 2
-
-            a, b, c = img_A, img_B_final, img_C
-            choices = [img_D_final, img_E_incorrect, img_F_incorrect]
-            sample_id = f"{rule_str}"
-
+            raise NotImplementedError(f"Level '{level}' is not implemented.")
         else:
             raise NotImplementedError(f"Level '{level}' is not implemented.")
 
@@ -366,8 +385,8 @@ if __name__ == "__main__":
         "kiva-Rotation": 0,
         "kiva-functions-Counting": 0,
         "kiva-functions-Reflect": 0,
-        "kiva-functions-Resizing": 1,
-        "kiva-functions-Rotation": 0,
+        "kiva-functions-Resizing": 0,
+        "kiva-functions-Rotation": 1,
         "kiva-functions-compositionality-Counting,Reflect": 0,
         "kiva-functions-compositionality-Counting,Resizing": 0,
         "kiva-functions-compositionality-Counting,Rotation": 0,
@@ -439,7 +458,7 @@ if __name__ == "__main__":
         ax.axis("off")
 
     plt.tight_layout()
-    grid_save_path = os.path.join(save_dir, f"{sample_id_str}_grid.png")
+    grid_save_path = os.path.join(save_dir, "debug_grid.png")
     plt.savefig(grid_save_path)
     plt.close(fig)
     print(f"Saved grid image to: {grid_save_path}")
