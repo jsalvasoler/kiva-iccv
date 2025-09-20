@@ -237,7 +237,6 @@ class OnTheFlyKiVADataset(Dataset):
         start_transformations = random.choices(
             self.start_transformation_options["kiva-functions"][rule], k=2
         )
-        start_transformations = ["+0", "+0"]
         print(f"DEBUG: Start transformations: {start_transformations}")
 
         if rule == "Counting":
@@ -293,12 +292,6 @@ class OnTheFlyKiVADataset(Dataset):
 
         elif rule == "Rotation":
             from utils.dataset.transformations_kiva_adults import apply_rotation
-
-            true_param = "180"
-            incorrect_params[0] = "+135"
-            incorrect_params[1] = "-90"
-            start_transformations[0] = "+0"
-            start_transformations[1] = "+0"
 
             _, img_A_initial, _, _ = apply_rotation(
                 img_A, start_transformations[0], type="train", initial_rotation="+0"
@@ -379,13 +372,13 @@ if __name__ == "__main__":
     #     "kiva-functions-compositionality-Resizing,Rotation": 96,
     # }
     distribution = {
-        "kiva-Counting": 0,
-        "kiva-Reflect": 0,
-        "kiva-Resizing": 0,
-        "kiva-Rotation": 0,
-        "kiva-functions-Counting": 0,
-        "kiva-functions-Reflect": 0,
-        "kiva-functions-Resizing": 0,
+        "kiva-Counting": 1,
+        "kiva-Reflect": 1,
+        "kiva-Resizing": 1,
+        "kiva-Rotation": 1,
+        "kiva-functions-Counting": 1,
+        "kiva-functions-Reflect": 1,
+        "kiva-functions-Resizing": 1,
         "kiva-functions-Rotation": 1,
         "kiva-functions-compositionality-Counting,Reflect": 0,
         "kiva-functions-compositionality-Counting,Resizing": 0,
