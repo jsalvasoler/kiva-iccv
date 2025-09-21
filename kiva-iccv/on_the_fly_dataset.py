@@ -261,45 +261,10 @@ class OnTheFlyKiVADataset(Dataset):
         elif rule == "Resizing":
             from utils.dataset.transformations_kiva import apply_resizing
 
-            def resize_and_paste_600(image: torch.Tensor, param: str) -> torch.Tensor:
-                img_temp, _, _ = apply_resizing(image, param, type="train")
-
-                # Custom paste function that preserves relative sizes within 600x600 canvas
-                _, h, w = img_temp.shape
-                canvas_size = 600
-
-                # If image is larger than canvas, scale it down but preserve relative sizes
-                if max(h, w) > canvas_size:
-                    # For 2XY images, we want them to appear larger than others
-                    # Scale down less aggressively to show the size difference
-                    if param == "2XY":
-                        # Scale to fit 80% of canvas to show it's larger
-                        scale = (canvas_size * 0.8) / float(max(h, w))
-                    else:
-                        # Normal scaling for other cases
-                        scale = canvas_size / float(max(h, w))
-
-                    new_h, new_w = int(round(h * scale)), int(round(w * scale))
-                    img_temp = torch.nn.functional.interpolate(
-                        img_temp.unsqueeze(0), size=(new_h, new_w), mode="bilinear", antialias=True
-                    ).squeeze(0)
-                    _, h, w = img_temp.shape
-
-                # Center the image on the canvas
-                pad_left = (canvas_size - w) // 2
-                pad_right = canvas_size - w - pad_left
-                pad_top = (canvas_size - h) // 2
-                pad_bottom = canvas_size - h - pad_top
-
-                return torch.nn.functional.pad(
-                    img_temp, (pad_left, pad_top, pad_right, pad_bottom), value=255
-                )
-
-            img_B_correct = resize_and_paste_600(img_A, true_param)
-            img_D_correct = resize_and_paste_600(img_C, true_param)
-            img_E_incorrect = resize_and_paste_600(img_C, incorrect_params[0])
-            img_F_incorrect = resize_and_paste_600(img_C, incorrect_params[1])
-            img_A_initial, img_C_initial = img_A, img_C
+            img_B_correct, _, _ = apply_resizing(img_A_initial, true_param, type="train")
+            img_D_correct, _, _ = apply_resizing(img_C_initial, true_param, type="train")
+            img_E_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[1], type="train")
 
         elif rule == "Rotation":
             from utils.dataset.transformations_kiva import apply_rotation
@@ -385,7 +350,7 @@ class OnTheFlyKiVADataset(Dataset):
             )
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva_adults import apply_resizing, paste_on_600
+            from utils.dataset.transformations_kiva_adults import apply_resizing
 
             img_A_initial, _, _ = apply_resizing(img_A, start_transformations[0], type="train")
             img_B_correct, _, _ = apply_resizing(img_A_initial, true_param, type="train")
@@ -394,14 +359,6 @@ class OnTheFlyKiVADataset(Dataset):
             img_D_correct, _, _ = apply_resizing(img_C_initial, true_param, type="train")
             img_E_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[0], type="train")
             img_F_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[1], type="train")
-
-            # finally paste everything on 600x600 canvas
-            img_A_initial = paste_on_600(img_A_initial)
-            img_B_correct = paste_on_600(img_B_correct)
-            img_C_initial = paste_on_600(img_C_initial)
-            img_D_correct = paste_on_600(img_D_correct)
-            img_E_incorrect = paste_on_600(img_E_incorrect)
-            img_F_incorrect = paste_on_600(img_F_incorrect)
 
         elif rule == "Rotation":
             from utils.dataset.transformations_kiva_adults import apply_rotation
@@ -469,7 +426,6 @@ class OnTheFlyKiVADataset(Dataset):
             [p for p in self.param_options["kiva-functions"]["Reflect"] if p != true_reflect_param]
         )
 
-        # Get starting states
         start_count_A, start_count_C = random.sample(
             self._get_counting_start_options(true_count_param), k=2
         )
@@ -481,9 +437,7 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         def make_initial(image: torch.Tensor, start_count: int, start_reflect: str) -> torch.Tensor:
-            # Apply starting reflection to base object first
             _, reflected, _, _ = apply_reflection(image, start_reflect, type="train")
-            # Then create the counted grid with the desired starting count on the reflected object
             initial_grid, _, _, _ = apply_counting(
                 reflected, "+1", type="train", initial_count=start_count
             )
@@ -492,19 +446,15 @@ class OnTheFlyKiVADataset(Dataset):
         def apply_true_chain(
             image: torch.Tensor, start_count: int, true_count: str, true_reflect: str
         ) -> torch.Tensor:
-            # Apply the true reflection to the base object first
             _, reflected_correct, _, _ = apply_reflection(image, true_reflect, type="train")
-            # Then apply the true counting to the reflected object
             _, out, _, _ = apply_counting(
                 reflected_correct, true_count, type="train", initial_count=start_count
             )
             return out
 
-        # Generate A/C initials using starting values
         img_A_initial = make_initial(img_A_base, start_count_A, start_reflect_A)
         img_C_initial = make_initial(img_C_base, start_count_C, start_reflect_C)
 
-        # Generate correct B/D from corresponding starts
         img_B_correct = apply_true_chain(
             img_A_base, start_count_A, true_count_param, true_reflect_param
         )
@@ -512,12 +462,10 @@ class OnTheFlyKiVADataset(Dataset):
             img_C_base, start_count_C, true_count_param, true_reflect_param
         )
 
-        # E: incorrect first (Reflect) parameter, correct second (Counting)
         img_E_incorrect = apply_true_chain(
             img_C_base, start_count_C, true_count_param, incorrect_reflect_param
         )
 
-        # F: incorrect second (Counting) parameter, correct first (Reflect)
         img_F_incorrect = apply_true_chain(
             img_C_base, start_count_C, incorrect_count_param, true_reflect_param
         )
@@ -534,7 +482,6 @@ class OnTheFlyKiVADataset(Dataset):
         from utils.dataset.transformations_kiva_adults import (
             apply_counting,
             apply_resizing,
-            paste_on_600,
         )
 
         # Get parameters
@@ -556,39 +503,45 @@ class OnTheFlyKiVADataset(Dataset):
             self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
 
+        print("DEBUG: Parameters")
+        print(f"DEBUG: - True count: {true_count_param}")
+        print(f"DEBUG: - True resizing: {true_resizing_param}")
+        print(f"DEBUG: - Incorrect resizing: {incorrect_resize_param}")
+        print(f"DEBUG: - Incorrect count: {incorrect_count_param}")
+        print(f"DEBUG: - Start count: {start_count_A}, {start_count_C}")
+        print(f"DEBUG: - Start resizing: {start_resize_A}, {start_resize_C}")
+
         def make_initial(image: torch.Tensor, start_count: int, start_resize: str) -> torch.Tensor:
-            img_temp, _, _ = apply_resizing(image, start_resize, type="train")
-            img_temp = paste_on_600(img_temp)
+            img_base_resized, _, _ = apply_resizing(image, start_resize, type="train")
             img_out, _, _, _ = apply_counting(
-                img_temp, "+1", type="train", initial_count=start_count
+                img_base_resized, "+1", type="train", initial_count=start_count
             )
-            return img_out
+            return img_out, img_base_resized
 
         def apply_true_chain(
             image: torch.Tensor, start_count: int, true_count: str, true_resize: str
         ) -> torch.Tensor:
             img_temp, _, _ = apply_resizing(image, true_resize, type="train")
-            img_temp = paste_on_600(img_temp)
             _, img_out, _, _ = apply_counting(
                 img_temp, true_count, type="train", initial_count=start_count
             )
             return img_out
 
-        img_A_initial = make_initial(img_A_base, start_count_A, start_resize_A)
+        img_A_initial, img_A_base_resized = make_initial(img_A_base, start_count_A, start_resize_A)
         img_B_correct = apply_true_chain(
-            img_A_base, start_count_A, true_count_param, true_resizing_param
+            img_A_base_resized, start_count_A, true_count_param, true_resizing_param
         )
 
-        img_C_initial = make_initial(img_C_base, start_count_C, start_resize_C)
+        img_C_initial, img_C_base_resized = make_initial(img_C_base, start_count_C, start_resize_C)
         img_D_correct = apply_true_chain(
-            img_C_base, start_count_C, true_count_param, true_resizing_param
+            img_C_base_resized, start_count_C, true_count_param, true_resizing_param
         )
 
         img_E_incorrect = apply_true_chain(
-            img_C_base, start_count_C, true_count_param, incorrect_resize_param
+            img_C_base_resized, start_count_C, true_count_param, incorrect_resize_param
         )
         img_F_incorrect = apply_true_chain(
-            img_C_base, start_count_C, incorrect_count_param, true_resizing_param
+            img_C_base_resized, start_count_C, incorrect_count_param, true_resizing_param
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
@@ -619,52 +572,42 @@ class OnTheFlyKiVADataset(Dataset):
             self._get_rotation_incorrect_options(true_rotation_param, start_rotation_C)
         )
 
-        # Generate A: apply starting transformations (rotate first, then count)
-        _, img_A_start_rotated, _, _ = apply_rotation(
-            img_A_base, start_rotation_A, type="train", initial_rotation="+0"
-        )
-        img_A_initial, _, _, _ = apply_counting(
-            img_A_start_rotated, "+1", type="train", initial_count=start_count_A
-        )
+        def make_initial(
+            image: torch.Tensor, start_count: int, start_rotation: str
+        ) -> torch.Tensor:
+            _, img_out, _, _ = apply_rotation(
+                image, start_rotation, type="train", initial_rotation="+0"
+            )
+            img_out, _, _, _ = apply_counting(
+                img_out, "+1", type="train", initial_count=start_count
+            )
+            return img_out
 
-        # Generate C: apply starting transformations
-        _, img_C_start_rotated, _, _ = apply_rotation(
-            img_C_base, start_rotation_C, type="train", initial_rotation="+0"
-        )
-        img_C_initial, _, _, _ = apply_counting(
-            img_C_start_rotated, "+1", type="train", initial_count=start_count_C
-        )
+        def apply_true_chain(
+            image: torch.Tensor, start_count: int, true_count: str, true_rotation: str
+        ) -> torch.Tensor:
+            _, img_temp, _, _ = apply_rotation(
+                image, true_rotation, type="train", initial_rotation="+0"
+            )
+            _, img_out, _, _ = apply_counting(
+                img_temp, true_count, type="train", initial_count=start_count
+            )
+            return img_out
 
-        # Generate B: Apply true transformations (rotate first, then count)
-        _, img_B_rotated, _, _ = apply_rotation(
-            img_A_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
-        )
-        _, img_B_correct, _, _ = apply_counting(
-            img_B_rotated, true_count_param, type="train", initial_count=start_count_A
-        )
+        img_A_initial = make_initial(img_A_base, start_count_A, start_rotation_A)
+        img_C_initial = make_initial(img_C_base, start_count_C, start_rotation_C)
 
-        # Generate D (correct): Apply true transformations to C
-        _, img_D_rotated, _, _ = apply_rotation(
-            img_C_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
+        img_B_correct = apply_true_chain(
+            img_A_initial, start_count_A, true_count_param, true_rotation_param
         )
-        _, img_D_correct, _, _ = apply_counting(
-            img_D_rotated, true_count_param, type="train", initial_count=start_count_C
+        img_D_correct = apply_true_chain(
+            img_C_initial, start_count_C, true_count_param, true_rotation_param
         )
-
-        # Generate E (incorrect param1 - rotation): true count, incorrect rotation
-        _, img_E_rotated, _, _ = apply_rotation(
-            img_C_start_rotated, incorrect_rotation_param, type="train", initial_rotation="+0"
+        img_E_incorrect = apply_true_chain(
+            img_C_initial, start_count_C, true_count_param, incorrect_rotation_param
         )
-        _, img_E_incorrect, _, _ = apply_counting(
-            img_E_rotated, true_count_param, type="train", initial_count=start_count_C
-        )
-
-        # Generate F (incorrect param2 - counting): incorrect count, true rotation
-        _, img_F_rotated, _, _ = apply_rotation(
-            img_C_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
-        )
-        _, img_F_incorrect, _, _ = apply_counting(
-            img_F_rotated, incorrect_count_param, type="train", initial_count=start_count_C
+        img_F_incorrect = apply_true_chain(
+            img_C_initial, start_count_C, incorrect_count_param, true_rotation_param
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
@@ -680,7 +623,6 @@ class OnTheFlyKiVADataset(Dataset):
         from utils.dataset.transformations_kiva_adults import (
             apply_reflection,
             apply_resizing,
-            paste_on_600,
         )
 
         # Get parameters
@@ -709,26 +651,15 @@ class OnTheFlyKiVADataset(Dataset):
         ) -> torch.Tensor:
             img_temp, _, _, _ = apply_reflection(image, reflect_param, type="train")
             img_out, _, _ = apply_resizing(img_temp, resizing_param, type="train")
-            return paste_on_600(img_out)
+            return img_out
 
-        # Generate A: apply starting transformations
         img_A_initial = apply_reflection_and_resizing(img_A_base, start_reflect_A, start_resize_A)
-
-        # Generate C: apply starting transformations
         img_C_initial = apply_reflection_and_resizing(img_C_base, start_reflect_C, start_resize_C)
-
-        # Generate B: Apply true transformations to base A (not compounding starts)
         img_B_correct = apply_reflection_and_resizing(img_A_initial, true_param1, true_param2)
-
-        # Generate D (correct): Apply true transformations to base C
         img_D_correct = apply_reflection_and_resizing(img_C_initial, true_param1, true_param2)
-
-        # Generate E (incorrect param2): true reflect, incorrect resize on base C
         img_E_incorrect = apply_reflection_and_resizing(
             img_C_initial, true_param1, incorrect_resize_param
         )
-
-        # Generate F (incorrect param1): incorrect reflect, true resize on base C
         img_F_incorrect = apply_reflection_and_resizing(
             img_C_initial, incorrect_reflect_param, true_param2
         )
@@ -746,7 +677,6 @@ class OnTheFlyKiVADataset(Dataset):
         from utils.dataset.transformations_kiva_adults import (
             apply_resizing,
             apply_rotation,
-            paste_on_600,
         )
 
         # Get parameters
@@ -754,16 +684,10 @@ class OnTheFlyKiVADataset(Dataset):
         true_param2 = random.choice(self.param_options["kiva-functions"]["Rotation"])
 
         # Get starting states
-        start_resize_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Resizing"]
+        start_resize_A, start_resize_C = random.sample(
+            self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
-        start_rotation_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Rotation"]
-        )
-        start_resize_C = random.choice(
-            self.start_transformation_options["kiva-functions"]["Resizing"]
-        )
-        start_rotation_C = random.choice(
+        start_rotation_A, start_rotation_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Rotation"]
         )
 
@@ -775,46 +699,25 @@ class OnTheFlyKiVADataset(Dataset):
             self._get_rotation_incorrect_options(true_param2, start_rotation_C)
         )
 
-        # Generate A: apply starting transformations
-        img_A_temp, _, _ = apply_resizing(img_A_base, start_resize_A, type="train")
-        img_A_temp = paste_on_600(img_A_temp)
-        _, img_A_initial, _, _ = apply_rotation(
-            img_A_temp, start_rotation_A, type="train", initial_rotation="+0"
-        )
+        def apply_resizing_and_rotation(
+            image: torch.Tensor, resizing_param: str, rotation_param: str
+        ) -> torch.Tensor:
+            img_temp, _, _ = apply_resizing(image, resizing_param, type="train")
+            _, img_out, _, _ = apply_rotation(
+                img_temp, rotation_param, type="train", initial_rotation="+0"
+            )
+            return img_out
 
-        # Generate C: apply starting transformations
-        img_C_temp, _, _ = apply_resizing(img_C_base, start_resize_C, type="train")
-        img_C_temp = paste_on_600(img_C_temp)
-        _, img_C_initial, _, _ = apply_rotation(
-            img_C_temp, start_rotation_C, type="train", initial_rotation="+0"
-        )
+        img_A_initial = apply_resizing_and_rotation(img_A_base, start_resize_A, start_rotation_A)
+        img_C_initial = apply_resizing_and_rotation(img_C_base, start_resize_C, start_rotation_C)
 
-        # Generate B: Apply true transformations to base A (not compounding starts)
-        img_B_temp, _, _ = apply_resizing(img_A_initial, true_param1, type="train")
-        img_B_temp = paste_on_600(img_B_temp)
-        _, img_B_correct, _, _ = apply_rotation(
-            img_B_temp, true_param2, type="train", initial_rotation="+0"
+        img_B_correct = apply_resizing_and_rotation(img_A_initial, true_param1, true_param2)
+        img_D_correct = apply_resizing_and_rotation(img_C_initial, true_param1, true_param2)
+        img_E_incorrect = apply_resizing_and_rotation(
+            img_C_initial, true_param1, incorrect_rotate_param
         )
-
-        # Generate D (correct): Apply true transformations to base C
-        img_D_temp, _, _ = apply_resizing(img_C_initial, true_param1, type="train")
-        img_D_temp = paste_on_600(img_D_temp)
-        _, img_D_correct, _, _ = apply_rotation(
-            img_D_temp, true_param2, type="train", initial_rotation="+0"
-        )
-
-        # Generate E (incorrect param2): true resize, incorrect rotation on base C
-        img_E_temp, _, _ = apply_resizing(img_C_initial, true_param1, type="train")
-        img_E_temp = paste_on_600(img_E_temp)
-        _, img_E_incorrect, _, _ = apply_rotation(
-            img_E_temp, incorrect_rotate_param, type="train", initial_rotation="+0"
-        )
-
-        # Generate F (incorrect param1): incorrect resize, true rotation on base C
-        img_F_temp, _, _ = apply_resizing(img_C_initial, incorrect_resize_param, type="train")
-        img_F_temp = paste_on_600(img_F_temp)
-        _, img_F_incorrect, _, _ = apply_rotation(
-            img_F_temp, true_param2, type="train", initial_rotation="+0"
+        img_F_incorrect = apply_resizing_and_rotation(
+            img_C_initial, incorrect_resize_param, true_param2
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial

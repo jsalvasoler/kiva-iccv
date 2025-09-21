@@ -185,12 +185,16 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
 
 def apply_resizing(image, factor, type):
+    # Resizing transformation
+    image = transforms.Resize((300, 300), antialias=True)(image)
+
+    # Pre-enlarging step for downscaling
     enlarge_first = factor.startswith("0.5")
     base_img = image
     if enlarge_first:
         H, W = image.shape[1:]
         base_img = F.resize(image, (H * 2, W * 2), antialias=True)
-    # Don't overwrite the original image variable - keep it for dimension calculations
+    image = base_img
 
     if factor == "0.5XY":
         correct_resize_factor = 0.5
@@ -225,9 +229,15 @@ def apply_resizing(image, factor, type):
     )(base_img)
 
     if type == "train":
-        return correct_image, 0, factor
+        return paste_on_600(correct_image), 0, factor
     elif type == "test":
-        return correct_image, incorrect_image, 0, factor, incorrect_option
+        return (
+            paste_on_600(correct_image),
+            paste_on_600(incorrect_image),
+            0,
+            factor,
+            incorrect_option,
+        )
 
 
 def apply_rotation(image, angle, type):

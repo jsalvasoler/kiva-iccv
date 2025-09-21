@@ -180,6 +180,7 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
     # Down-scale very large inputs so the larger edge is 600
     if max(h, w) > canvas_size:
+        print(f"WARNING: Image is larger than 600x600: {h}x{w}")
         scale = canvas_size / float(max(h, w))
         new_h, new_w = int(round(h * scale)), int(round(w * scale))
         img = F.resize(img, (new_h, new_w), antialias=True)
@@ -213,6 +214,9 @@ def apply_resizing(image, factor: str, type="train"):
         - if type is "train": (correct_image, 0, factor)
         - if type is "test": (correct_image, incorrect_image, 0, factor, incorrect_option)
     """
+    # --- 0. Apply the resizing transformation ---
+    image = transforms.Resize((300, 300), antialias=True)(image)
+
     # --- 1. Parse the factor string to get scale and axis ---
     try:
         if factor.endswith("XY"):
@@ -235,6 +239,12 @@ def apply_resizing(image, factor: str, type="train"):
         ) from e
 
     # --- 2. Handle the pre-enlarging step for downscaling ---
+    enlarge_first = scale < 1.0
+    base_img = image
+    if enlarge_first:
+        H, W = image.shape[1:]
+        base_img = F.resize(image, (H * (1.0 / scale), W * (1.0 / scale)), antialias=True)
+    image = base_img
     base_img = image
 
     # --- 3. Determine correct and incorrect transformation parameters ---
@@ -272,13 +282,19 @@ def apply_resizing(image, factor: str, type="train"):
 
     # --- 5. Return based on the specified type ---
     if type == "train":
-        return correct_image, 0, factor
+        return paste_on_600(correct_image), 0, factor
 
     elif type == "test":
         incorrect_image = transforms.Resize(
             (incorrect_new_height, incorrect_new_width), antialias=True
         )(base_img)
-        return correct_image, incorrect_image, 0, factor, incorrect_option
+        return (
+            paste_on_600(correct_image),
+            paste_on_600(incorrect_image),
+            0,
+            factor,
+            incorrect_option,
+        )
 
 
 def apply_resizing_original(image, factor, type="train"):
