@@ -980,7 +980,6 @@ if __name__ == "__main__":
     }
     import tqdm
 
-    distribution = ["kiva-Resizing"]
     for case in tqdm.tqdm(distribution):
         main(case)
         print(f"Finished {case}")
