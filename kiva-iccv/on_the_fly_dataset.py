@@ -1,6 +1,5 @@
 import os
 import random
-import shutil
 from pathlib import Path
 
 import torch
@@ -486,47 +485,45 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate A: apply starting transformations (resize first, then count)
         img_A_start_resized, _, _ = apply_resizing(img_A_base, start_resize_A, type="train")
+        img_A_start_resized = paste_on_600(img_A_start_resized)
         img_A_initial, _, _, _ = apply_counting(
             img_A_start_resized, "+1", type="train", initial_count=start_count_A
         )
 
         # Generate C: apply starting transformations
         img_C_start_resized, _, _ = apply_resizing(img_C_base, start_resize_C, type="train")
+        img_C_start_resized = paste_on_600(img_C_start_resized)
         img_C_initial, _, _, _ = apply_counting(
             img_C_start_resized, "+1", type="train", initial_count=start_count_C
         )
 
         # Generate B: Apply true transformations (resize first, then count)
         img_B_resized, _, _ = apply_resizing(img_A_base, true_param2, type="train")
+        img_B_resized = paste_on_600(img_B_resized)
         _, img_B_correct, _, _ = apply_counting(
             img_B_resized, true_param1, type="train", initial_count=start_count_A
         )
 
         # Generate D (correct): Apply true transformations to C
         img_D_resized, _, _ = apply_resizing(img_C_base, true_param2, type="train")
+        img_D_resized = paste_on_600(img_D_resized)
         _, img_D_correct, _, _ = apply_counting(
             img_D_resized, true_param1, type="train", initial_count=start_count_C
         )
 
         # Generate E (incorrect param1): true count, incorrect resize
         img_E_resized, _, _ = apply_resizing(img_C_base, incorrect_param2, type="train")
+        img_E_resized = paste_on_600(img_E_resized)
         _, img_E_incorrect, _, _ = apply_counting(
             img_E_resized, true_param1, type="train", initial_count=start_count_C
         )
 
         # Generate F (incorrect param2): incorrect count, true resize
         img_F_resized, _, _ = apply_resizing(img_C_base, true_param2, type="train")
+        img_F_resized = paste_on_600(img_F_resized)
         _, img_F_incorrect, _, _ = apply_counting(
             img_F_resized, incorrect_param1, type="train", initial_count=start_count_C
         )
-
-        # Apply paste_on_600 for all images since resizing is involved
-        img_A_initial = paste_on_600(img_A_initial)
-        img_B_correct = paste_on_600(img_B_correct)
-        img_C_initial = paste_on_600(img_C_initial)
-        img_D_correct = paste_on_600(img_D_correct)
-        img_E_incorrect = paste_on_600(img_E_incorrect)
-        img_F_incorrect = paste_on_600(img_F_incorrect)
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
         choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
@@ -725,47 +722,45 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate A: apply starting transformations
         img_A_temp, _, _ = apply_resizing(img_A_base, start_resize_A, type="train")
+        img_A_temp = paste_on_600(img_A_temp)
         _, img_A_initial, _, _ = apply_rotation(
             img_A_temp, start_rotation_A, type="train", initial_rotation="+0"
         )
 
         # Generate C: apply starting transformations
         img_C_temp, _, _ = apply_resizing(img_C_base, start_resize_C, type="train")
+        img_C_temp = paste_on_600(img_C_temp)
         _, img_C_initial, _, _ = apply_rotation(
             img_C_temp, start_rotation_C, type="train", initial_rotation="+0"
         )
 
         # Generate B: Apply true transformations to base A (not compounding starts)
-        img_B_temp, _, _ = apply_resizing(img_A_base, true_param1, type="train")
+        img_B_temp, _, _ = apply_resizing(img_A_initial, true_param1, type="train")
+        img_B_temp = paste_on_600(img_B_temp)
         _, img_B_correct, _, _ = apply_rotation(
             img_B_temp, true_param2, type="train", initial_rotation="+0"
         )
 
         # Generate D (correct): Apply true transformations to base C
-        img_D_temp, _, _ = apply_resizing(img_C_base, true_param1, type="train")
+        img_D_temp, _, _ = apply_resizing(img_C_initial, true_param1, type="train")
+        img_D_temp = paste_on_600(img_D_temp)
         _, img_D_correct, _, _ = apply_rotation(
             img_D_temp, true_param2, type="train", initial_rotation="+0"
         )
 
         # Generate E (incorrect param2): true resize, incorrect rotation on base C
-        img_E_temp, _, _ = apply_resizing(img_C_base, true_param1, type="train")
+        img_E_temp, _, _ = apply_resizing(img_C_initial, true_param1, type="train")
+        img_E_temp = paste_on_600(img_E_temp)
         _, img_E_incorrect, _, _ = apply_rotation(
             img_E_temp, incorrect_param2, type="train", initial_rotation="+0"
         )
 
         # Generate F (incorrect param1): incorrect resize, true rotation on base C
-        img_F_temp, _, _ = apply_resizing(img_C_base, incorrect_param1, type="train")
+        img_F_temp, _, _ = apply_resizing(img_C_initial, incorrect_param1, type="train")
+        img_F_temp = paste_on_600(img_F_temp)
         _, img_F_incorrect, _, _ = apply_rotation(
             img_F_temp, true_param2, type="train", initial_rotation="+0"
         )
-
-        # Apply paste_on_600 for all images since resizing is involved
-        img_A_initial = paste_on_600(img_A_initial)
-        img_B_correct = paste_on_600(img_B_correct)
-        img_C_initial = paste_on_600(img_C_initial)
-        img_D_correct = paste_on_600(img_D_correct)
-        img_E_incorrect = paste_on_600(img_E_incorrect)
-        img_F_incorrect = paste_on_600(img_F_incorrect)
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
         choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
@@ -836,10 +831,10 @@ if __name__ == "__main__":
         "kiva-functions-Reflect": 0,
         "kiva-functions-Resizing": 0,
         "kiva-functions-Rotation": 0,
-        "kiva-functions-compositionality-Counting,Reflect": 1,
-        "kiva-functions-compositionality-Counting,Resizing": 1,
-        "kiva-functions-compositionality-Counting,Rotation": 1,
-        "kiva-functions-compositionality-Reflect,Resizing": 1,
+        "kiva-functions-compositionality-Counting,Reflect": 0,
+        "kiva-functions-compositionality-Counting,Resizing": 0,
+        "kiva-functions-compositionality-Counting,Rotation": 0,
+        "kiva-functions-compositionality-Reflect,Resizing": 0,
         "kiva-functions-compositionality-Resizing,Rotation": 1,
     }
 
@@ -869,9 +864,6 @@ if __name__ == "__main__":
 
     # --- Optional: Save a visual of the first item in the batch for debugging ---
     save_dir = "debug_batch_images"
-    # wipe it first
-    if os.path.exists(save_dir):
-        shutil.rmtree(save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     # Get all 6 images for the first sample
