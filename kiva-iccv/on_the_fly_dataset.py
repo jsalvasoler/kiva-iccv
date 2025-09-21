@@ -27,6 +27,13 @@ class OnTheFlyKiVADataset(Dataset):
             "Resizing": self.root_dir / "Planar Objects for Resize",
             "Counting": self.root_dir / "Objects for Colour, Counting",
         }
+        self.dir_map_composite_to_single = {
+            "Counting,Reflect": "Reflect",
+            "Counting,Resizing": "Resizing",
+            "Counting,Rotation": "Rotation",
+            "Reflect,Resizing": "Resizing",
+            "Resizing,Rotation": "Rotation",
+        }
         for dir_path in self.dir_map.values():
             if not dir_path.exists():
                 raise FileNotFoundError(f"Required directory does not exist: {dir_path}")
@@ -46,16 +53,24 @@ class OnTheFlyKiVADataset(Dataset):
             ]
         )
 
-        # normalize distribution config
-        distribution_config = {
-            k: v / sum(distribution_config.values()) for k, v in distribution_config.items()
-        }
+        # Normalize distribution config
+        total_weight = sum(distribution_config.values())
+        if total_weight > 0:
+            self.distribution_config = {k: v / total_weight for k, v in distribution_config.items()}
+        else:
+            self.distribution_config = distribution_config
 
-        self.rules = list(distribution_config.keys())
-        self.weights = list(distribution_config.values())
+        self.rules = list(self.distribution_config.keys())
+        self.weights = list(self.distribution_config.values())
         self.base_canvas_transform = transforms.Resize((600, 600), antialias=True)
 
         self.param_options = {
+            "kiva-functions-compositionality": {
+                "Counting": ["+1", "+2", "-1", "-2", "x2", "x3", "d2", "d3"],
+                "Reflect": ["X", "Y"],
+                "Resizing": ["0.5XY", "2XY", "0.5X", "0.5Y", "2X", "2Y"],
+                "Rotation": ["+45", "-45", "+90", "-90", "+135", "-135", "180"],
+            },
             "kiva-functions": {
                 "Counting": ["+1", "+2", "-1", "-2", "x2", "x3", "d2", "d3"],
                 "Reflect": ["X", "Y", "XY"],
@@ -74,14 +89,46 @@ class OnTheFlyKiVADataset(Dataset):
             "kiva-functions": {
                 "Counting": list(range(1, 10)),
                 "Reflect": ["X", "Y", ""],
-                "Resizing": ["0.8XY", "0.8X", "1.2XY", "1.2X", "0.8Y", "1.2Y", "1XY"],
-                "Rotation": ["+0", "+45", "-45", "+90", "-90", "+135", "-135"],
+                # Reasonable continuous starts for resizing and rotation (used by compositionality)
+                "Resizing": [
+                    "0.8XY",
+                    "1.2XY",
+                    "0.8X",
+                    "1.2X",
+                    "0.8Y",
+                    "1.2Y",
+                    "1X",
+                    "1Y",
+                ],
+                "Rotation": ["+0", "+45", "-45", "+90", "-90", "+135", "-135", "180"],
+            },
+            "kiva-functions-compositionality": {
+                "Counting": list(range(1, 10)),
+                "Reflect": ["X", "Y", ""],
+                "Resizing": [
+                    "0.8XY",
+                    "1.2XY",
+                    "0.8X",
+                    "1.2X",
+                    "0.8Y",
+                    "1.2Y",
+                    "1X",
+                    "1Y",
+                ],
+                "Rotation": ["+0", "+45", "-45", "+90", "-90", "+135", "-135", "180"],
             },
         }
-
         self.param_options["kiva-functions-compositionality"] = self.param_options["kiva-functions"]
 
         self.all_rules = ["Counting", "Reflect", "Resizing", "Rotation"]
+
+        self.all_compositionality_rules = [
+            "Counting,Reflect",
+            "Counting,Resizing",
+            "Counting,Rotation",
+            "Reflect,Resizing",
+            "Resizing,Rotation",
+        ]
 
         print(
             f"Dataset Initialized. An epoch will consist of {self.epoch_length} generated samples."
@@ -92,11 +139,16 @@ class OnTheFlyKiVADataset(Dataset):
 
     def _load_random_images(self, n: int, rule_types: list[str]) -> list[torch.Tensor]:
         """Loads n unique random images suitable for the given transformation types."""
-        # For composite transformations, find a common directory if possible, else default
-        primary_rule = rule_types[0]
-        dir_path = self.dir_map[primary_rule]
 
+        if len(rule_types) == 1:
+            primary_rule = rule_types[0]
+        else:
+            primary_rule = self.dir_map_composite_to_single[",".join(rule_types)]
+
+        dir_path = self.dir_map[primary_rule]
         image_files = self.file_lists[primary_rule]
+        print(f"DEBUG: Getting image from {dir_path}")
+
         if len(image_files) < n:
             raise ValueError(f"Not enough images in {dir_path} to sample {n} unique images.")
 
@@ -114,23 +166,6 @@ class OnTheFlyKiVADataset(Dataset):
                 img = (rgb * alpha + white_bg.float() * (1 - alpha)).byte()
             images.append(self.base_canvas_transform(img))
         return images
-
-    def _apply_and_get_images(self, func, image, param, start_count=None):
-        """Helper to get initial and correct images from a transform function."""
-        if func == self.transformation_functions["Counting"]:
-            if start_count is not None:
-                initial, correct, _, _, _, _ = func(
-                    image, param, type="test", initial_count=start_count
-                )
-            else:
-                initial, correct, _, _, _, _ = func(image, param, type="test")
-        elif func == self.transformation_functions["Reflect"]:
-            initial, correct, _, _ = func(image, param, type="test")
-        elif func == self.transformation_functions["Resizing"]:
-            initial, correct, _, _ = func(image, param, type="test")
-        elif func == self.transformation_functions["Rotation"]:
-            initial, correct, _, _, _, _ = func(image, param, type="test")
-        return initial, correct
 
     def _generate_kiva_level(self, rule: str) -> tuple:
         # A->B :: C->D. Goal: Identify the same transformation (rule + parameter + values).
@@ -320,10 +355,430 @@ class OnTheFlyKiVADataset(Dataset):
         sample_id = f"{rule}_{true_param}"
         return a, b, c, choices, sample_id
 
+    def _generate_kiva_functions_compositionality_level(self, rule_composition: str) -> tuple:
+        """
+        Generates a sample for the compositionality level.
+        A -> B :: C -> D.
+        The transformation is a sequence of two functions.
+        Handles each of the 5 possible compositions separately.
+        """
+        img_A_base, img_C_base = self._load_random_images(2, rule_composition.split(","))
+
+        if rule_composition == "Counting,Reflect":
+            return self._generate_counting_reflect_composition(img_A_base, img_C_base)
+        elif rule_composition == "Counting,Resizing":
+            return self._generate_counting_resizing_composition(img_A_base, img_C_base)
+        elif rule_composition == "Counting,Rotation":
+            return self._generate_counting_rotation_composition(img_A_base, img_C_base)
+        elif rule_composition == "Reflect,Resizing":
+            return self._generate_reflect_resizing_composition(img_A_base, img_C_base)
+        elif rule_composition == "Resizing,Rotation":
+            return self._generate_resizing_rotation_composition(img_A_base, img_C_base)
+        else:
+            raise ValueError(f"Unsupported composition: {rule_composition}")
+
+    def _generate_counting_reflect_composition(
+        self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
+    ) -> tuple:
+        """Handle Counting,Reflect composition"""
+        from utils.dataset.transformations_kiva_adults import apply_counting, apply_reflection
+
+        # Get parameters
+        true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
+        true_reflect_param = random.choice(self.param_options["kiva-functions"]["Reflect"])
+
+        incorrect_count_param = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_count_param]
+        )
+        incorrect_reflect_param = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Reflect"] if p != true_reflect_param]
+        )
+
+        # Get starting states
+        start_count_A, start_count_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Counting"], k=2
+        )
+        start_reflect_A, start_reflect_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Reflect"], k=2
+        )
+
+        def make_initial(image: torch.Tensor, start_count: int, start_reflect: str) -> torch.Tensor:
+            # Apply starting reflection to base object first
+            _, reflected, _, _ = apply_reflection(image, start_reflect, type="train")
+            # Then create the counted grid with the desired starting count on the reflected object
+            initial_grid, _, _, _ = apply_counting(
+                reflected, "+1", type="train", initial_count=start_count
+            )
+            return initial_grid
+
+        def apply_true_chain(
+            image: torch.Tensor, start_count: int, true_count: str, true_reflect: str
+        ) -> torch.Tensor:
+            # Apply the true reflection to the base object first
+            _, reflected_correct, _, _ = apply_reflection(image, true_reflect, type="train")
+            # Then apply the true counting to the reflected object
+            _, out, _, _ = apply_counting(
+                reflected_correct, true_count, type="train", initial_count=start_count
+            )
+            return out
+
+        # Generate A/C initials using starting values
+        img_A_initial = make_initial(img_A_base, start_count_A, start_reflect_A)
+        img_C_initial = make_initial(img_C_base, start_count_C, start_reflect_C)
+
+        # Generate correct B/D from corresponding starts
+        img_B_correct = apply_true_chain(
+            img_A_base, start_count_A, true_count_param, true_reflect_param
+        )
+        img_D_correct = apply_true_chain(
+            img_C_base, start_count_C, true_count_param, true_reflect_param
+        )
+
+        # E: incorrect first (Reflect) parameter, correct second (Counting)
+        img_E_incorrect = apply_true_chain(
+            img_C_base, start_count_C, true_count_param, incorrect_reflect_param
+        )
+
+        # F: incorrect second (Counting) parameter, correct first (Reflect)
+        img_F_incorrect = apply_true_chain(
+            img_C_base, start_count_C, incorrect_count_param, true_reflect_param
+        )
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
+        sample_id = f"Counting{true_count_param}_Reflect{true_reflect_param}"
+        return a, b, c, choices, sample_id
+
+    def _generate_counting_resizing_composition(
+        self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
+    ) -> tuple:
+        """Handle Counting,Resizing composition"""
+        from utils.dataset.transformations_kiva_adults import (
+            apply_counting,
+            apply_resizing,
+            paste_on_600,
+        )
+
+        # Get parameters
+        true_param1 = random.choice(self.param_options["kiva-functions"]["Counting"])
+        true_param2 = random.choice(self.param_options["kiva-functions"]["Resizing"])
+
+        incorrect_param1 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_param1]
+        )
+        incorrect_param2 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param2]
+        )
+
+        # Get starting states
+        start_count_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Counting"]
+        )
+        start_resize_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+        start_count_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Counting"]
+        )
+        start_resize_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+
+        # Generate A: apply starting transformations (resize first, then count)
+        img_A_start_resized, _, _ = apply_resizing(img_A_base, start_resize_A, type="train")
+        img_A_initial, _, _, _ = apply_counting(
+            img_A_start_resized, "+1", type="train", initial_count=start_count_A
+        )
+
+        # Generate C: apply starting transformations
+        img_C_start_resized, _, _ = apply_resizing(img_C_base, start_resize_C, type="train")
+        img_C_initial, _, _, _ = apply_counting(
+            img_C_start_resized, "+1", type="train", initial_count=start_count_C
+        )
+
+        # Generate B: Apply true transformations (resize first, then count)
+        img_B_resized, _, _ = apply_resizing(img_A_base, true_param2, type="train")
+        _, img_B_correct, _, _ = apply_counting(
+            img_B_resized, true_param1, type="train", initial_count=start_count_A
+        )
+
+        # Generate D (correct): Apply true transformations to C
+        img_D_resized, _, _ = apply_resizing(img_C_base, true_param2, type="train")
+        _, img_D_correct, _, _ = apply_counting(
+            img_D_resized, true_param1, type="train", initial_count=start_count_C
+        )
+
+        # Generate E (incorrect param1): true count, incorrect resize
+        img_E_resized, _, _ = apply_resizing(img_C_base, incorrect_param2, type="train")
+        _, img_E_incorrect, _, _ = apply_counting(
+            img_E_resized, true_param1, type="train", initial_count=start_count_C
+        )
+
+        # Generate F (incorrect param2): incorrect count, true resize
+        img_F_resized, _, _ = apply_resizing(img_C_base, true_param2, type="train")
+        _, img_F_incorrect, _, _ = apply_counting(
+            img_F_resized, incorrect_param1, type="train", initial_count=start_count_C
+        )
+
+        # Apply paste_on_600 for all images since resizing is involved
+        img_A_initial = paste_on_600(img_A_initial)
+        img_B_correct = paste_on_600(img_B_correct)
+        img_C_initial = paste_on_600(img_C_initial)
+        img_D_correct = paste_on_600(img_D_correct)
+        img_E_incorrect = paste_on_600(img_E_incorrect)
+        img_F_incorrect = paste_on_600(img_F_incorrect)
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
+        sample_id = f"Counting{true_param1}_Resizing{true_param2}"
+        return a, b, c, choices, sample_id
+
+    def _generate_counting_rotation_composition(
+        self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
+    ) -> tuple:
+        """Handle Counting,Rotation composition"""
+
+        from utils.dataset.transformations_kiva_adults import apply_counting, apply_rotation
+
+        true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
+        true_rotation_param = random.choice(self.param_options["kiva-functions"]["Rotation"])
+
+        incorrect_count_param = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_count_param]
+        )
+        incorrect_rotation_param = random.choice(
+            [
+                p
+                for p in self.param_options["kiva-functions"]["Rotation"]
+                if p != true_rotation_param
+            ]
+        )
+
+        # Get starting states
+        start_count_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Counting"]
+        )
+        start_rotation_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Rotation"]
+        )
+        start_count_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Counting"]
+        )
+        start_rotation_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Rotation"]
+        )
+
+        # Generate A: apply starting transformations (rotate first, then count)
+        _, img_A_start_rotated, _, _ = apply_rotation(
+            img_A_base, start_rotation_A, type="train", initial_rotation="+0"
+        )
+        img_A_initial, _, _, _ = apply_counting(
+            img_A_start_rotated, "+1", type="train", initial_count=start_count_A
+        )
+
+        # Generate C: apply starting transformations
+        _, img_C_start_rotated, _, _ = apply_rotation(
+            img_C_base, start_rotation_C, type="train", initial_rotation="+0"
+        )
+        img_C_initial, _, _, _ = apply_counting(
+            img_C_start_rotated, "+1", type="train", initial_count=start_count_C
+        )
+
+        # Generate B: Apply true transformations (rotate first, then count)
+        _, img_B_rotated, _, _ = apply_rotation(
+            img_A_base, true_rotation_param, type="train", initial_rotation="+0"
+        )
+        _, img_B_correct, _, _ = apply_counting(
+            img_B_rotated, true_count_param, type="train", initial_count=start_count_A
+        )
+
+        # Generate D (correct): Apply true transformations to C
+        _, img_D_rotated, _, _ = apply_rotation(
+            img_C_base, true_rotation_param, type="train", initial_rotation="+0"
+        )
+        _, img_D_correct, _, _ = apply_counting(
+            img_D_rotated, true_count_param, type="train", initial_count=start_count_C
+        )
+
+        # Generate E (incorrect param1 - rotation): true count, incorrect rotation
+        _, img_E_rotated, _, _ = apply_rotation(
+            img_C_base, incorrect_rotation_param, type="train", initial_rotation="+0"
+        )
+        _, img_E_incorrect, _, _ = apply_counting(
+            img_E_rotated, true_count_param, type="train", initial_count=start_count_C
+        )
+
+        # Generate F (incorrect param2 - counting): incorrect count, true rotation
+        _, img_F_rotated, _, _ = apply_rotation(
+            img_C_base, true_rotation_param, type="train", initial_rotation="+0"
+        )
+        _, img_F_incorrect, _, _ = apply_counting(
+            img_F_rotated, incorrect_count_param, type="train", initial_count=start_count_C
+        )
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
+        sample_id = f"Counting{true_count_param}_Rotation{true_rotation_param}"
+        return a, b, c, choices, sample_id
+
+    def _generate_reflect_resizing_composition(
+        self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
+    ) -> tuple:
+        """Handle Reflect,Resizing composition"""
+
+        from utils.dataset.transformations_kiva_adults import (
+            apply_reflection,
+            apply_resizing,
+            paste_on_600,
+        )
+
+        # Get parameters
+        true_param1 = random.choice(self.param_options["kiva-functions"]["Reflect"])
+        true_param2 = random.choice(self.param_options["kiva-functions"]["Resizing"])
+
+        incorrect_param1 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Reflect"] if p != true_param1]
+        )
+        incorrect_param2 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param2]
+        )
+
+        # Get starting states
+        start_reflect_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Reflect"]
+        )
+        start_resize_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+        start_reflect_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Reflect"]
+        )
+        start_resize_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+
+        def apply_reflection_and_resizing(
+            image: torch.Tensor, reflect_param: str, resizing_param: str
+        ) -> torch.Tensor:
+            _, img_temp, _, _ = apply_reflection(image, reflect_param, type="train")
+            img_out, _, _ = apply_resizing(img_temp, resizing_param, type="train")
+            return paste_on_600(img_out)
+
+        # Generate A: apply starting transformations
+        img_A_initial = apply_reflection_and_resizing(img_A_base, start_reflect_A, start_resize_A)
+
+        # Generate C: apply starting transformations
+        img_C_initial = apply_reflection_and_resizing(img_C_base, start_reflect_C, start_resize_C)
+
+        # Generate B: Apply true transformations to base A (not compounding starts)
+        img_B_correct = apply_reflection_and_resizing(img_A_base, true_param1, true_param2)
+
+        # Generate D (correct): Apply true transformations to base C
+        img_D_correct = apply_reflection_and_resizing(img_C_base, true_param1, true_param2)
+
+        # Generate E (incorrect param2): true reflect, incorrect resize on base C
+        img_E_incorrect = apply_reflection_and_resizing(img_C_base, true_param1, incorrect_param2)
+
+        # Generate F (incorrect param1): incorrect reflect, true resize on base C
+        img_F_incorrect = apply_reflection_and_resizing(img_C_base, incorrect_param1, true_param2)
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
+        sample_id = f"Reflect{true_param1}_Resizing{true_param2}"
+        return a, b, c, choices, sample_id
+
+    def _generate_resizing_rotation_composition(
+        self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
+    ) -> tuple:
+        """Handle Resizing,Rotation composition"""
+
+        from utils.dataset.transformations_kiva_adults import (
+            apply_resizing,
+            apply_rotation,
+            paste_on_600,
+        )
+
+        # Get parameters
+        true_param1 = random.choice(self.param_options["kiva-functions"]["Resizing"])
+        true_param2 = random.choice(self.param_options["kiva-functions"]["Rotation"])
+
+        incorrect_param1 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param1]
+        )
+        incorrect_param2 = random.choice(
+            [p for p in self.param_options["kiva-functions"]["Rotation"] if p != true_param2]
+        )
+
+        # Get starting states
+        start_resize_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+        start_rotation_A = random.choice(
+            self.start_transformation_options["kiva-functions"]["Rotation"]
+        )
+        start_resize_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Resizing"]
+        )
+        start_rotation_C = random.choice(
+            self.start_transformation_options["kiva-functions"]["Rotation"]
+        )
+
+        # Generate A: apply starting transformations
+        img_A_temp, _, _ = apply_resizing(img_A_base, start_resize_A, type="train")
+        _, img_A_initial, _, _ = apply_rotation(
+            img_A_temp, start_rotation_A, type="train", initial_rotation="+0"
+        )
+
+        # Generate C: apply starting transformations
+        img_C_temp, _, _ = apply_resizing(img_C_base, start_resize_C, type="train")
+        _, img_C_initial, _, _ = apply_rotation(
+            img_C_temp, start_rotation_C, type="train", initial_rotation="+0"
+        )
+
+        # Generate B: Apply true transformations to base A (not compounding starts)
+        img_B_temp, _, _ = apply_resizing(img_A_base, true_param1, type="train")
+        _, img_B_correct, _, _ = apply_rotation(
+            img_B_temp, true_param2, type="train", initial_rotation="+0"
+        )
+
+        # Generate D (correct): Apply true transformations to base C
+        img_D_temp, _, _ = apply_resizing(img_C_base, true_param1, type="train")
+        _, img_D_correct, _, _ = apply_rotation(
+            img_D_temp, true_param2, type="train", initial_rotation="+0"
+        )
+
+        # Generate E (incorrect param2): true resize, incorrect rotation on base C
+        img_E_temp, _, _ = apply_resizing(img_C_base, true_param1, type="train")
+        _, img_E_incorrect, _, _ = apply_rotation(
+            img_E_temp, incorrect_param2, type="train", initial_rotation="+0"
+        )
+
+        # Generate F (incorrect param1): incorrect resize, true rotation on base C
+        img_F_temp, _, _ = apply_resizing(img_C_base, incorrect_param1, type="train")
+        _, img_F_incorrect, _, _ = apply_rotation(
+            img_F_temp, true_param2, type="train", initial_rotation="+0"
+        )
+
+        # Apply paste_on_600 for all images since resizing is involved
+        img_A_initial = paste_on_600(img_A_initial)
+        img_B_correct = paste_on_600(img_B_correct)
+        img_C_initial = paste_on_600(img_C_initial)
+        img_D_correct = paste_on_600(img_D_correct)
+        img_E_incorrect = paste_on_600(img_E_incorrect)
+        img_F_incorrect = paste_on_600(img_F_incorrect)
+
+        a, b, c = img_A_initial, img_B_correct, img_C_initial
+        choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
+        sample_id = f"Resizing{true_param1}_Rotation{true_param2}"
+        return a, b, c, choices, sample_id
+
     def __getitem__(self, idx: int) -> tuple:
+        if not self.rules:
+            raise RuntimeError("Distribution config is empty or all weights are zero.")
         rule_str = random.choices(self.rules, self.weights, k=1)[0]
         level, rule = rule_str.rsplit("-", 1)
 
+        # Dispatch to the correct generation function
         if level == "kiva":
             a, b, c, choices, sample_id = self._generate_kiva_level(rule)
 
@@ -331,7 +786,8 @@ class OnTheFlyKiVADataset(Dataset):
             a, b, c, choices, sample_id = self._generate_kiva_functions_level(rule)
 
         elif level == "kiva-functions-compositionality":
-            raise NotImplementedError(f"Level '{level}' is not implemented.")
+            a, b, c, choices, sample_id = self._generate_kiva_functions_compositionality_level(rule)
+
         else:
             raise NotImplementedError(f"Level '{level}' is not implemented.")
 
@@ -372,19 +828,19 @@ if __name__ == "__main__":
     #     "kiva-functions-compositionality-Resizing,Rotation": 96,
     # }
     distribution = {
-        "kiva-Counting": 1,
-        "kiva-Reflect": 1,
-        "kiva-Resizing": 1,
-        "kiva-Rotation": 1,
-        "kiva-functions-Counting": 1,
-        "kiva-functions-Reflect": 1,
-        "kiva-functions-Resizing": 1,
-        "kiva-functions-Rotation": 1,
-        "kiva-functions-compositionality-Counting,Reflect": 0,
-        "kiva-functions-compositionality-Counting,Resizing": 0,
-        "kiva-functions-compositionality-Counting,Rotation": 0,
-        "kiva-functions-compositionality-Reflect,Resizing": 0,
-        "kiva-functions-compositionality-Resizing,Rotation": 0,
+        "kiva-Counting": 0,
+        "kiva-Reflect": 0,
+        "kiva-Resizing": 0,
+        "kiva-Rotation": 0,
+        "kiva-functions-Counting": 0,
+        "kiva-functions-Reflect": 0,
+        "kiva-functions-Resizing": 0,
+        "kiva-functions-Rotation": 0,
+        "kiva-functions-compositionality-Counting,Reflect": 1,
+        "kiva-functions-compositionality-Counting,Resizing": 1,
+        "kiva-functions-compositionality-Counting,Rotation": 1,
+        "kiva-functions-compositionality-Reflect,Resizing": 1,
+        "kiva-functions-compositionality-Resizing,Rotation": 1,
     }
 
     print("\nUsing the following generation distribution:")
