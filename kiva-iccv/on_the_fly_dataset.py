@@ -146,6 +146,15 @@ class OnTheFlyKiVADataset(Dataset):
         else:
             raise ValueError(f"Invalid true parameter: {true_param}")
 
+    def _get_counting_incorrect_param_options(self, true_param: str, start_count: int) -> list[str]:
+        true_final_count = start_count + int(true_param[1:])
+        possible_final_counts = [x for x in list(range(1, 10)) if x != true_final_count]
+        return [
+            f"+{c - start_count}" if c - start_count > 0 else f"-{start_count - c}"
+            for c in possible_final_counts
+            if abs(c - start_count) <= 2 and c != start_count
+        ]
+
     def __len__(self) -> int:
         return self.epoch_length
 
@@ -272,22 +281,30 @@ class OnTheFlyKiVADataset(Dataset):
         true_param = random.choice(self.param_options["kiva-functions"][rule])
         print(f"DEBUG: True param: {true_param}")
 
-        # Ensure at least 2 other params are available for distractors
-        param_choices = [p for p in self.param_options["kiva-functions"][rule] if p != true_param]
-        if len(param_choices) < 2:
-            raise ValueError(
-                f"Rule {rule} needs at least 3 parameter options for kiva-functions level."
-            )
-        incorrect_params = random.sample(param_choices, 2)
-        print(f"DEBUG: Incorrect params: {incorrect_params}")
-
         options = (
             self.start_transformation_options["kiva-functions"][rule]
             if rule != "Counting"
             else self._get_counting_start_options(true_param)
         )
-        start_transformations = random.choices(options, k=2)
+        start_transformations = random.sample(options, k=2)
         print(f"DEBUG: Start transformations: {start_transformations}")
+
+        # Ensure at least 2 other params are available for distractors
+        if rule == "Counting":
+            params_choices = self._get_counting_incorrect_param_options(
+                true_param, start_transformations[1]
+            )
+        else:
+            params_choices = [
+                p for p in self.param_options["kiva-functions"][rule] if p != true_param
+            ]
+        print(f"DEBUG: Params choices: {params_choices}")
+        if len(params_choices) < 2:
+            raise ValueError(
+                f"Rule {rule} needs at least 3 parameter options for kiva-functions level."
+            )
+        incorrect_params = random.sample(params_choices, k=2)
+        print(f"DEBUG: Incorrect params: {incorrect_params}")
 
         if rule == "Counting":
             from utils.dataset.transformations_kiva_adults import apply_counting
@@ -402,18 +419,18 @@ class OnTheFlyKiVADataset(Dataset):
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_reflect_param = random.choice(self.param_options["kiva-functions"]["Reflect"])
 
-        incorrect_count_param = random.choice(
-            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_count_param]
-        )
         incorrect_reflect_param = random.choice(
             [p for p in self.param_options["kiva-functions"]["Reflect"] if p != true_reflect_param]
         )
 
         # Get starting states
-        start_count_A, start_count_C = random.choices(
+        start_count_A, start_count_C = random.sample(
             self._get_counting_start_options(true_count_param), k=2
         )
-        start_reflect_A, start_reflect_C = random.choices(
+        incorrect_count_param = random.choice(
+            self._get_counting_incorrect_param_options(true_count_param, start_count_C)
+        )
+        start_reflect_A, start_reflect_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Reflect"], k=2
         )
 
@@ -478,10 +495,7 @@ class OnTheFlyKiVADataset(Dataset):
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_resizing_param = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
-        incorrect_param1 = random.choice(
-            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_count_param]
-        )
-        incorrect_param2 = random.choice(
+        incorrect_resize_param = random.choice(
             [
                 p
                 for p in self.param_options["kiva-functions"]["Resizing"]
@@ -490,10 +504,13 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         # Get starting states
-        start_count_A, start_count_C = random.choices(
+        start_count_A, start_count_C = random.sample(
             self._get_counting_start_options(true_count_param), k=2
         )
-        start_resize_A, start_resize_C = random.choices(
+        incorrect_count_param = random.choice(
+            self._get_counting_incorrect_param_options(true_count_param, start_count_C)
+        )
+        start_resize_A, start_resize_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
 
@@ -526,7 +543,7 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         # Generate E (incorrect param1): true count, incorrect resize
-        img_E_resized, _, _ = apply_resizing(img_C_base, incorrect_param2, type="train")
+        img_E_resized, _, _ = apply_resizing(img_C_base, incorrect_resize_param, type="train")
         img_E_resized = paste_on_600(img_E_resized)
         _, img_E_incorrect, _, _ = apply_counting(
             img_E_resized, true_count_param, type="train", initial_count=start_count_C
@@ -536,7 +553,7 @@ class OnTheFlyKiVADataset(Dataset):
         img_F_resized, _, _ = apply_resizing(img_C_base, true_resizing_param, type="train")
         img_F_resized = paste_on_600(img_F_resized)
         _, img_F_incorrect, _, _ = apply_counting(
-            img_F_resized, incorrect_param1, type="train", initial_count=start_count_C
+            img_F_resized, incorrect_count_param, type="train", initial_count=start_count_C
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
@@ -554,9 +571,6 @@ class OnTheFlyKiVADataset(Dataset):
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_rotation_param = random.choice(self.param_options["kiva-functions"]["Rotation"])
 
-        incorrect_count_param = random.choice(
-            [p for p in self.param_options["kiva-functions"]["Counting"] if p != true_count_param]
-        )
         incorrect_rotation_param = random.choice(
             [
                 p
@@ -566,10 +580,13 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         # Get starting states
-        start_count_A, start_count_C = random.choices(
+        start_count_A, start_count_C = random.sample(
             self._get_counting_start_options(true_count_param), k=2
         )
-        start_rotation_A, start_rotation_C = random.choices(
+        incorrect_count_param = random.choice(
+            self._get_counting_incorrect_param_options(true_count_param, start_count_C)
+        )
+        start_rotation_A, start_rotation_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Rotation"], k=2
         )
         print(f"DEBUG: Start rotations: {start_rotation_A}, {start_rotation_C}")
@@ -647,19 +664,19 @@ class OnTheFlyKiVADataset(Dataset):
         true_param1 = random.choice(self.param_options["kiva-functions"]["Reflect"])
         true_param2 = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
-        incorrect_param1 = random.choice(
+        incorrect_reflect_param = random.choice(
             [p for p in self.param_options["kiva-functions"]["Reflect"] if p != true_param1]
         )
-        incorrect_param2 = random.choice(
+        incorrect_resize_param = random.choice(
             [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param2]
         )
 
         # Get starting states
-        start_reflect_A, start_reflect_C = random.choices(
+        start_reflect_A, start_reflect_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Reflect"],
             k=2,
         )
-        start_resize_A, start_resize_C = random.choices(
+        start_resize_A, start_resize_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Resizing"],
             k=2,
         )
@@ -685,12 +702,12 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate E (incorrect param2): true reflect, incorrect resize on base C
         img_E_incorrect = apply_reflection_and_resizing(
-            img_C_initial, true_param1, incorrect_param2
+            img_C_initial, true_param1, incorrect_resize_param
         )
 
         # Generate F (incorrect param1): incorrect reflect, true resize on base C
         img_F_incorrect = apply_reflection_and_resizing(
-            img_C_initial, incorrect_param1, true_param2
+            img_C_initial, incorrect_reflect_param, true_param2
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
@@ -713,10 +730,10 @@ class OnTheFlyKiVADataset(Dataset):
         true_param1 = random.choice(self.param_options["kiva-functions"]["Resizing"])
         true_param2 = random.choice(self.param_options["kiva-functions"]["Rotation"])
 
-        incorrect_param1 = random.choice(
+        incorrect_resize_param = random.choice(
             [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param1]
         )
-        incorrect_param2 = random.choice(
+        incorrect_rotate_param = random.choice(
             [p for p in self.param_options["kiva-functions"]["Rotation"] if p != true_param2]
         )
 
@@ -766,11 +783,11 @@ class OnTheFlyKiVADataset(Dataset):
         img_E_temp, _, _ = apply_resizing(img_C_initial, true_param1, type="train")
         img_E_temp = paste_on_600(img_E_temp)
         _, img_E_incorrect, _, _ = apply_rotation(
-            img_E_temp, incorrect_param2, type="train", initial_rotation="+0"
+            img_E_temp, incorrect_rotate_param, type="train", initial_rotation="+0"
         )
 
         # Generate F (incorrect param1): incorrect resize, true rotation on base C
-        img_F_temp, _, _ = apply_resizing(img_C_initial, incorrect_param1, type="train")
+        img_F_temp, _, _ = apply_resizing(img_C_initial, incorrect_resize_param, type="train")
         img_F_temp = paste_on_600(img_F_temp)
         _, img_F_incorrect, _, _ = apply_rotation(
             img_F_temp, true_param2, type="train", initial_rotation="+0"
@@ -818,7 +835,7 @@ class OnTheFlyKiVADataset(Dataset):
         return (*final_images, torch.tensor(correct_idx, dtype=torch.long), sample_id)
 
 
-if __name__ == "__main__":
+def main(case):
     # ruff: noqa: ERA001
     # # --- Define the distribution from your table ---
     # distribution = {
@@ -846,11 +863,12 @@ if __name__ == "__main__":
         "kiva-functions-Resizing": 0,
         "kiva-functions-Rotation": 0,
         "kiva-functions-compositionality-Counting,Reflect": 0,
-        "kiva-functions-compositionality-Counting,Resizing": 1,
+        "kiva-functions-compositionality-Counting,Resizing": 0,
         "kiva-functions-compositionality-Counting,Rotation": 0,
         "kiva-functions-compositionality-Reflect,Resizing": 0,
         "kiva-functions-compositionality-Resizing,Rotation": 0,
     }
+    distribution[case] = 1
 
     print("\nUsing the following generation distribution:")
     for rule, prob in distribution.items():
@@ -913,9 +931,34 @@ if __name__ == "__main__":
         ax.axis("off")
 
     plt.tight_layout()
-    grid_save_path = os.path.join(save_dir, "debug_grid.png")
+    save_dir = os.path.join(save_dir, case)
+    os.makedirs(save_dir, exist_ok=True)
+    grid_save_path = os.path.join(save_dir, f"{sample_id_str}.png")
     plt.savefig(grid_save_path)
     plt.close(fig)
     print(f"Saved grid image to: {grid_save_path}")
 
     print(f"Correct choice index for this sample is: {labels[0].item()}")
+
+
+if __name__ == "__main__":
+    distribution = {
+        "kiva-Counting": 0,
+        "kiva-Reflect": 0,
+        "kiva-Resizing": 0,
+        "kiva-Rotation": 0,
+        "kiva-functions-Counting": 0,
+        "kiva-functions-Reflect": 0,
+        "kiva-functions-Resizing": 0,
+        "kiva-functions-Rotation": 0,
+        "kiva-functions-compositionality-Counting,Reflect": 0,
+        "kiva-functions-compositionality-Counting,Resizing": 0,
+        "kiva-functions-compositionality-Counting,Rotation": 0,
+        "kiva-functions-compositionality-Reflect,Resizing": 0,
+        "kiva-functions-compositionality-Resizing,Rotation": 0,
+    }
+    import tqdm
+
+    for case in tqdm.tqdm(distribution):
+        main(case)
+        print(f"Finished {case}")
