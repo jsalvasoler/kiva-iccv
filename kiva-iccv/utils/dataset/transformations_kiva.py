@@ -190,7 +190,7 @@ def apply_resizing(image, factor, type):
     if enlarge_first:
         H, W = image.shape[1:]
         base_img = F.resize(image, (H * 2, W * 2), antialias=True)
-    image = base_img
+    # Don't overwrite the original image variable - keep it for dimension calculations
 
     if factor == "0.5XY":
         correct_resize_factor = 0.5
@@ -207,6 +207,7 @@ def apply_resizing(image, factor, type):
     else:
         raise ValueError(f"Invalid resize factor: {factor}. Choose from '0.5XY' or '2XY'.")
 
+    # Use original image dimensions for calculation, not the pre-enlarged base_img
     new_width, new_height = image.shape[2], image.shape[1]  # Original dimensions
 
     correct_new_width = int(new_width * correct_resize_factor)
@@ -215,12 +216,13 @@ def apply_resizing(image, factor, type):
     incorrect_new_width = int(new_width * incorrect_resize_factor)
     incorrect_new_height = int(new_height * incorrect_resize_factor)
 
+    # Apply transformations to the appropriate base image (original or pre-enlarged)
     correct_image = transforms.Resize((correct_new_height, correct_new_width), antialias=True)(
-        image
+        base_img
     )
     incorrect_image = transforms.Resize(
         (incorrect_new_height, incorrect_new_width), antialias=True
-    )(image)
+    )(base_img)
 
     if type == "train":
         return correct_image, 0, factor
