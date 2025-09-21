@@ -129,9 +129,7 @@ def apply_counting(image, param, type="train", initial_count=None):
         if operation in ["+", "-"]
         else starting_options_map[operation][param_num]
     )
-    starting_count = random.choice(
-        [num for num in starting_options if num != initial_count] or starting_options
-    )
+    starting_count = initial_count if initial_count is not None else random.choice(starting_options)
     correct_count, incorrect_count = calculate_counts(operation, starting_count, param_num)
 
     initial_image = generate_grid_image(image, starting_count)

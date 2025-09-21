@@ -552,18 +552,18 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         # Get starting states
-        start_count_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Counting"]
+        start_count_A, start_count_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Counting"], k=2
         )
-        start_rotation_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Rotation"]
+        start_rotation_A, start_rotation_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Rotation"], k=2
         )
-        start_count_C = random.choice(
-            self.start_transformation_options["kiva-functions"]["Counting"]
-        )
-        start_rotation_C = random.choice(
-            self.start_transformation_options["kiva-functions"]["Rotation"]
-        )
+        print(f"DEBUG: Start rotations: {start_rotation_A}, {start_rotation_C}")
+        print(f"DEBUG: Start counts: {start_count_A}, {start_count_C}")
+        print(f"DEBUG: True rotation: {true_rotation_param}")
+        print(f"DEBUG: True count: {true_count_param}")
+        print(f"DEBUG: Incorrect rotation: {incorrect_rotation_param}")
+        print(f"DEBUG: Incorrect count: {incorrect_count_param}")
 
         # Generate A: apply starting transformations (rotate first, then count)
         _, img_A_start_rotated, _, _ = apply_rotation(
@@ -583,7 +583,7 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate B: Apply true transformations (rotate first, then count)
         _, img_B_rotated, _, _ = apply_rotation(
-            img_A_base, true_rotation_param, type="train", initial_rotation="+0"
+            img_A_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
         )
         _, img_B_correct, _, _ = apply_counting(
             img_B_rotated, true_count_param, type="train", initial_count=start_count_A
@@ -591,7 +591,7 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate D (correct): Apply true transformations to C
         _, img_D_rotated, _, _ = apply_rotation(
-            img_C_base, true_rotation_param, type="train", initial_rotation="+0"
+            img_C_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
         )
         _, img_D_correct, _, _ = apply_counting(
             img_D_rotated, true_count_param, type="train", initial_count=start_count_C
@@ -599,7 +599,7 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate E (incorrect param1 - rotation): true count, incorrect rotation
         _, img_E_rotated, _, _ = apply_rotation(
-            img_C_base, incorrect_rotation_param, type="train", initial_rotation="+0"
+            img_C_start_rotated, incorrect_rotation_param, type="train", initial_rotation="+0"
         )
         _, img_E_incorrect, _, _ = apply_counting(
             img_E_rotated, true_count_param, type="train", initial_count=start_count_C
@@ -607,7 +607,7 @@ class OnTheFlyKiVADataset(Dataset):
 
         # Generate F (incorrect param2 - counting): incorrect count, true rotation
         _, img_F_rotated, _, _ = apply_rotation(
-            img_C_base, true_rotation_param, type="train", initial_rotation="+0"
+            img_C_start_rotated, true_rotation_param, type="train", initial_rotation="+0"
         )
         _, img_F_incorrect, _, _ = apply_counting(
             img_F_rotated, incorrect_count_param, type="train", initial_count=start_count_C
@@ -833,8 +833,8 @@ if __name__ == "__main__":
         "kiva-functions-Rotation": 0,
         "kiva-functions-compositionality-Counting,Reflect": 0,
         "kiva-functions-compositionality-Counting,Resizing": 0,
-        "kiva-functions-compositionality-Counting,Rotation": 0,
-        "kiva-functions-compositionality-Reflect,Resizing": 1,
+        "kiva-functions-compositionality-Counting,Rotation": 1,
+        "kiva-functions-compositionality-Reflect,Resizing": 0,
         "kiva-functions-compositionality-Resizing,Rotation": 0,
     }
 
