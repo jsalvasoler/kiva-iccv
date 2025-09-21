@@ -30,7 +30,7 @@ class OnTheFlyKiVADataset(Dataset):
             "Counting,Reflect": "Reflect",
             "Counting,Resizing": "Resizing",
             "Counting,Rotation": "Rotation",
-            "Reflect,Resizing": "Resizing",
+            "Reflect,Resizing": "Reflect",
             "Resizing,Rotation": "Rotation",
         }
         for dir_path in self.dir_map.values():
@@ -641,23 +641,19 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         # Get starting states
-        start_reflect_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Reflect"]
+        start_reflect_A, start_reflect_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Reflect"],
+            k=2,
         )
-        start_resize_A = random.choice(
-            self.start_transformation_options["kiva-functions"]["Resizing"]
-        )
-        start_reflect_C = random.choice(
-            self.start_transformation_options["kiva-functions"]["Reflect"]
-        )
-        start_resize_C = random.choice(
-            self.start_transformation_options["kiva-functions"]["Resizing"]
+        start_resize_A, start_resize_C = random.choices(
+            self.start_transformation_options["kiva-functions"]["Resizing"],
+            k=2,
         )
 
         def apply_reflection_and_resizing(
             image: torch.Tensor, reflect_param: str, resizing_param: str
         ) -> torch.Tensor:
-            _, img_temp, _, _ = apply_reflection(image, reflect_param, type="train")
+            img_temp, _, _, _ = apply_reflection(image, reflect_param, type="train")
             img_out, _, _ = apply_resizing(img_temp, resizing_param, type="train")
             return paste_on_600(img_out)
 
@@ -668,16 +664,20 @@ class OnTheFlyKiVADataset(Dataset):
         img_C_initial = apply_reflection_and_resizing(img_C_base, start_reflect_C, start_resize_C)
 
         # Generate B: Apply true transformations to base A (not compounding starts)
-        img_B_correct = apply_reflection_and_resizing(img_A_base, true_param1, true_param2)
+        img_B_correct = apply_reflection_and_resizing(img_A_initial, true_param1, true_param2)
 
         # Generate D (correct): Apply true transformations to base C
-        img_D_correct = apply_reflection_and_resizing(img_C_base, true_param1, true_param2)
+        img_D_correct = apply_reflection_and_resizing(img_C_initial, true_param1, true_param2)
 
         # Generate E (incorrect param2): true reflect, incorrect resize on base C
-        img_E_incorrect = apply_reflection_and_resizing(img_C_base, true_param1, incorrect_param2)
+        img_E_incorrect = apply_reflection_and_resizing(
+            img_C_initial, true_param1, incorrect_param2
+        )
 
         # Generate F (incorrect param1): incorrect reflect, true resize on base C
-        img_F_incorrect = apply_reflection_and_resizing(img_C_base, incorrect_param1, true_param2)
+        img_F_incorrect = apply_reflection_and_resizing(
+            img_C_initial, incorrect_param1, true_param2
+        )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
         choices = [img_D_correct, img_E_incorrect, img_F_incorrect]
@@ -834,8 +834,8 @@ if __name__ == "__main__":
         "kiva-functions-compositionality-Counting,Reflect": 0,
         "kiva-functions-compositionality-Counting,Resizing": 0,
         "kiva-functions-compositionality-Counting,Rotation": 0,
-        "kiva-functions-compositionality-Reflect,Resizing": 0,
-        "kiva-functions-compositionality-Resizing,Rotation": 1,
+        "kiva-functions-compositionality-Reflect,Resizing": 1,
+        "kiva-functions-compositionality-Resizing,Rotation": 0,
     }
 
     print("\nUsing the following generation distribution:")
