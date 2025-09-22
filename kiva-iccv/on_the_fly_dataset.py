@@ -61,7 +61,9 @@ class OnTheFlyKiVADataset(Dataset):
 
         self.rules = list(self.distribution_config.keys())
         self.weights = list(self.distribution_config.values())
+
         self.base_canvas_transform = transforms.Resize((600, 600), antialias=True)
+        self.canvas_resize = transforms.Resize((300, 300), antialias=True)
 
         self.param_options = {
             "kiva-functions-compositionality": {
@@ -115,16 +117,6 @@ class OnTheFlyKiVADataset(Dataset):
             },
         }
         self.param_options["kiva-functions-compositionality"] = self.param_options["kiva-functions"]
-
-        self.all_rules = ["Counting", "Reflect", "Resizing", "Rotation"]
-
-        self.all_compositionality_rules = [
-            "Counting,Reflect",
-            "Counting,Resizing",
-            "Counting,Rotation",
-            "Reflect,Resizing",
-            "Resizing,Rotation",
-        ]
 
         print(
             f"Dataset Initialized. An epoch will consist of {self.epoch_length} generated samples."
@@ -228,21 +220,14 @@ class OnTheFlyKiVADataset(Dataset):
         if rule == "Counting":
             from utils.dataset.transformations_kiva import apply_counting
 
-            # For counting, we need to ensure same starting count
-            # First generate with img_A to get the starting count
             img_A_initial, img_B_correct, start_count, _ = apply_counting(
                 img_A, true_param, type="train"
             )
 
-            # Apply the same transformation to img_C with the same starting count
             img_C_initial, img_D_correct, start_count, _ = apply_counting(
                 img_C, true_param, type="train", initial_count=start_count
             )
 
-            # TODO: logic to generate the incorrect options.
-            # 1) could be more than 2 incorrect options
-            # 2) we want to give more probability to options that are "closer" to the correct option
-            # Generate incorrect options with different parameters, but same starting count
             _, img_E_incorrect, _, _ = apply_counting(
                 img_C, incorrect_params[0], type="train", initial_count=start_count
             )
@@ -259,12 +244,20 @@ class OnTheFlyKiVADataset(Dataset):
             img_A_initial, img_C_initial = img_A, img_C
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva import apply_resizing
+            from utils.dataset.transformations_kiva import apply_resizing, paste_on_600
 
-            img_B_correct, _, _ = apply_resizing(img_A_initial, true_param, type="train")
-            img_D_correct, _, _ = apply_resizing(img_C_initial, true_param, type="train")
-            img_E_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[0], type="train")
-            img_F_incorrect, _, _ = apply_resizing(img_C_initial, incorrect_params[1], type="train")
+            img_B_correct, _, _ = apply_resizing(img_A, true_param, type="train")
+            img_D_correct, _, _ = apply_resizing(img_C, true_param, type="train")
+            img_E_incorrect, _, _ = apply_resizing(img_C, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_resizing(img_C, incorrect_params[1], type="train")
+
+            def paste_and_canvas_resize(img: torch.Tensor) -> torch.Tensor:
+                return paste_on_600(self.canvas_resize(img))
+
+            img_A_initial, img_C_initial = (
+                paste_and_canvas_resize(img_A),
+                paste_and_canvas_resize(img_C),
+            )
 
         elif rule == "Rotation":
             from utils.dataset.transformations_kiva import apply_rotation
@@ -502,14 +495,6 @@ class OnTheFlyKiVADataset(Dataset):
         start_resize_A, start_resize_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
-
-        print("DEBUG: Parameters")
-        print(f"DEBUG: - True count: {true_count_param}")
-        print(f"DEBUG: - True resizing: {true_resizing_param}")
-        print(f"DEBUG: - Incorrect resizing: {incorrect_resize_param}")
-        print(f"DEBUG: - Incorrect count: {incorrect_count_param}")
-        print(f"DEBUG: - Start count: {start_count_A}, {start_count_C}")
-        print(f"DEBUG: - Start resizing: {start_resize_A}, {start_resize_C}")
 
         def make_initial(image: torch.Tensor, start_count: int, start_resize: str) -> torch.Tensor:
             img_base_resized, _, _ = apply_resizing(image, start_resize, type="train")
@@ -873,6 +858,6 @@ if __name__ == "__main__":
     }
     import tqdm
 
-    distribution = ["kiva-functions-compositionality-Counting,Resizing"]
+    distribution = ["kiva-Resizing"]
     for case in tqdm.tqdm(distribution):
         main(case)

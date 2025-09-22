@@ -171,6 +171,7 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
     # Down-scale very large inputs so the larger edge is 600
     if max(h, w) > canvas_size:
+        print(f"WARNING: Image is larger than 600x600: {h}x{w}")
         scale = canvas_size / float(max(h, w))
         new_h, new_w = int(round(h * scale)), int(round(w * scale))
         img = F.resize(img, (new_h, new_w), antialias=True)
@@ -185,16 +186,12 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
 
 def apply_resizing(image, factor, type):
-    # Resizing transformation
-    image = transforms.Resize((300, 300), antialias=True)(image)
+    # apply the resizing transformation
+    base_img = transforms.Resize((300, 300), antialias=True)(image)
 
-    # Pre-enlarging step for downscaling
-    enlarge_first = factor.startswith("0.5")
-    base_img = image
-    if enlarge_first:
+    if factor.startswith("0.5"):
         H, W = image.shape[1:]
-        base_img = F.resize(image, (H * 2, W * 2), antialias=True)
-    image = base_img
+        image = F.resize(image, (H * 2, W * 2), antialias=True)
 
     if factor == "0.5XY":
         correct_resize_factor = 0.5
@@ -209,10 +206,9 @@ def apply_resizing(image, factor, type):
         incorrect_resize_factor = 1.0
         incorrect_option = "2XY"
     else:
-        raise ValueError(f"Invalid resize factor: {factor}. Choose from '0.5XY' or '2XY'.")
+        raise ValueError(f"Invalid resize factor. Choose from '0.5XY' or '2XY'. Got {factor}.")
 
-    # Use original image dimensions for calculation, not the pre-enlarged base_img
-    new_width, new_height = image.shape[2], image.shape[1]  # Original dimensions
+    new_width, new_height = base_img.shape[2], base_img.shape[1]  # Original dimensions
 
     correct_new_width = int(new_width * correct_resize_factor)
     correct_new_height = int(new_height * correct_resize_factor)
@@ -220,10 +216,10 @@ def apply_resizing(image, factor, type):
     incorrect_new_width = int(new_width * incorrect_resize_factor)
     incorrect_new_height = int(new_height * incorrect_resize_factor)
 
-    # Apply transformations to the appropriate base image (original or pre-enlarged)
     correct_image = transforms.Resize((correct_new_height, correct_new_width), antialias=True)(
         base_img
     )
+
     incorrect_image = transforms.Resize(
         (incorrect_new_height, incorrect_new_width), antialias=True
     )(base_img)

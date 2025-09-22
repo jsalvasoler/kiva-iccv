@@ -240,12 +240,11 @@ def apply_resizing(image, factor: str, type="train"):
 
     # --- 2. Handle the pre-enlarging step for downscaling ---
     enlarge_first = scale < 1.0
-    base_img = image
     if enlarge_first:
         H, W = image.shape[1:]
-        base_img = F.resize(image, (H * (1.0 / scale), W * (1.0 / scale)), antialias=True)
-    image = base_img
-    base_img = image
+        new_H = int(H * (1.0 / scale))
+        new_W = int(W * (1.0 / scale))
+        image = F.resize(image, (new_H, new_W), antialias=True)
 
     # --- 3. Determine correct and incorrect transformation parameters ---
     if axis == "XY":
@@ -267,7 +266,7 @@ def apply_resizing(image, factor: str, type="train"):
         incorrect_option = f"{scale}X"
 
     # --- 4. Calculate new dimensions and apply transformations ---
-    new_width, new_height = base_img.shape[2], base_img.shape[1]
+    new_width, new_height = image.shape[2], image.shape[1]
 
     # Remember: transforms.Resize expects (height, width)
     correct_new_height = int(new_height * correct_resize_factors[1])
@@ -277,7 +276,7 @@ def apply_resizing(image, factor: str, type="train"):
     incorrect_new_width = int(new_width * incorrect_resize_factors[0])
 
     correct_image = transforms.Resize((correct_new_height, correct_new_width), antialias=True)(
-        base_img
+        image
     )
 
     # --- 5. Return based on the specified type ---
@@ -287,7 +286,7 @@ def apply_resizing(image, factor: str, type="train"):
     elif type == "test":
         incorrect_image = transforms.Resize(
             (incorrect_new_height, incorrect_new_width), antialias=True
-        )(base_img)
+        )(correct_image)
         return (
             paste_on_600(correct_image),
             paste_on_600(incorrect_image),
