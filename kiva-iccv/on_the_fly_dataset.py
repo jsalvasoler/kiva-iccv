@@ -11,12 +11,12 @@ from torchvision.io import read_image
 class OnTheFlyKiVADataset(Dataset):
     def __init__(
         self,
-        data_dir: str,
+        objects_dir: str,
         distribution_config: dict[str, float],
         epoch_length: int = 1000,
         transform=None,
     ):
-        self.root_dir = Path(data_dir)
+        self.root_dir = Path(objects_dir)
         self.epoch_length = epoch_length
 
         # Map transformation types to their specific object directories
@@ -825,9 +825,9 @@ def main(case):
     distribution[case] = 1
 
     # --- Instantiate the Dataset and DataLoader ---
-    DATA_DIR = "/home/ubuntu/kiva-iccv/data/KiVA/untransformed objects"
+    objects_dir = "/home/ubuntu/kiva-iccv/data/KiVA/untransformed objects"
     kiva_dataset = OnTheFlyKiVADataset(
-        data_dir=DATA_DIR,
+        objects_dir=objects_dir,
         distribution_config=distribution,
         epoch_length=100,  # smaller epoch for quick demo
     )

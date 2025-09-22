@@ -180,7 +180,6 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
     # Down-scale very large inputs so the larger edge is 600
     if max(h, w) > canvas_size:
-        print(f"WARNING: Image is larger than 600x600: {h}x{w}")
         scale = canvas_size / float(max(h, w))
         new_h, new_w = int(round(h * scale)), int(round(w * scale))
         img = F.resize(img, (new_h, new_w), antialias=True)

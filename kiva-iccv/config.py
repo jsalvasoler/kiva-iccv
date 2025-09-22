@@ -12,6 +12,8 @@ class Config(BaseModel):
     # Paths will be provided by the argparser
     data_dir: str
     metadata_path: str
+    task: Literal["train", "validation", "test"]
+    use_otf: bool = False
 
     # Loss
     loss_type: Literal["standard_triplet", "contrastive"] = "standard_triplet"
@@ -34,11 +36,46 @@ class Config(BaseModel):
     neptune_api_token: str = ""
 
 
-def create_config_from_args(args, data_dir: str, metadata_path: str) -> Config:
+def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
+    """Returns the data directory and metadata path based on a keyword."""
+    base_data_path = "./data"
+    mapping = {
+        "unit": ("split_unit", "unit.json"),
+        "train": ("split_train", "train.json"),
+        "validation": ("split_validation", "validation.json"),
+        "validation_sample": ("split_validation", "validation.json"),
+        "test": ("split_test", "test.json"),
+    }
+    if dataset_keyword not in mapping:
+        raise ValueError(f"Invalid dataset keyword '{dataset_keyword}'.")
+    split_dir, meta_file = mapping[dataset_keyword]
+
+    data_dir = os.path.join(base_data_path, split_dir)
+    metadata_path = os.path.join(base_data_path, meta_file)
+
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"Data directory not found: {data_dir}")
+    if not os.path.isfile(metadata_path):
+        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+
+    return data_dir, metadata_path
+
+
+def create_config_from_args(args, for_task: Literal["train", "validation", "test"]) -> Config:
     """Create a Config object from parsed arguments, overriding defaults."""
+
+    dataset_path = {
+        "train": args.train_on,
+        "validation": args.validate_on,
+        "test": args.test_on,
+    }
+    data_dir, metadata_path = get_dataset_paths(dataset_path[for_task])
+
     config_dict = {
+        "task": for_task,
         "data_dir": data_dir,
         "metadata_path": metadata_path,
+        "use_otf": args.use_otf,
         "loss_type": args.loss_type,
         "margin": args.margin,
         "transformation_net": args.transformation_net,
@@ -64,7 +101,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
         description="Train and evaluate a Siamese Network for Visual Analogies."
     )
 
-    # Main action arguments
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument(
         "--do_test", action="store_true", help="Whether to run testing on the test set."
@@ -75,7 +111,16 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="",
         help="Output directory for model and predictions. Must be specified if only testing.",
     )
-    # Dataset arguments
+    # use otf for on-the-fly generation
+    parser.add_argument(
+        "--use_otf",
+        action="store_true",
+        help=(
+            "Whether to use on-the-fly generation. This only impacts the training dataset, "
+            "and not the validation or test datasets."
+        ),
+    )
+    # Dataset arguments: unit, train, validation, test
     dataset_options = ["unit", "train", "validation", "test"]
     parser.add_argument(
         "--train_on",
