@@ -487,13 +487,10 @@ class OnTheFlyKiVADataset(Dataset):
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_resizing_param = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
-        true_count_param = "-1"
-        true_resizing_param = "0.5Y"
-
-        incorrect_options = [
+        possible_params = [
             p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_resizing_param
         ]
-        incorrect_resize_param = random.choice(incorrect_options)
+        incorrect_resize_param = random.choice(possible_params)
 
         start_count_A, start_count_C = random.sample(
             self._get_counting_start_options(true_count_param), k=2
@@ -504,16 +501,6 @@ class OnTheFlyKiVADataset(Dataset):
         start_resize_A, start_resize_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
-
-        print("DEBUG: params")
-        print(f" - true_count_param: {true_count_param}")
-        print(f" - true_resizing_param: {true_resizing_param}")
-        print(f" - incorrect_resize_param: {incorrect_resize_param}")
-        print(f" - incorrect_count_param: {incorrect_count_param}")
-        print(f" - start_count_A: {start_count_A}")
-        print(f" - start_count_C: {start_count_C}")
-        print(f" - start_resize_A: {start_resize_A}")
-        print(f" - start_resize_C: {start_resize_C}")
 
         def make_initial(image: torch.Tensor, start_count: int, start_resize: str) -> torch.Tensor:
             image = self.canvas_resize(image)
@@ -728,11 +715,11 @@ class OnTheFlyKiVADataset(Dataset):
         def apply_resizing_and_rotation(
             image: torch.Tensor, resizing_param: str, rotation_param: str
         ) -> torch.Tensor:
-            img_temp, _, _ = apply_resizing(image, resizing_param, type="train")
-            _, img_out, _, _ = apply_rotation(
-                img_temp, rotation_param, type="train", initial_rotation="+0"
+            _, img_temp, _, _ = apply_rotation(
+                image, rotation_param, type="train", initial_rotation="+0"
             )
-            return img_out
+            img_temp, _, _ = apply_resizing(img_temp, resizing_param, type="train")
+            return img_temp
 
         img_A_base, img_C_base = (
             self.canvas_resize(img_A_base),
@@ -913,6 +900,5 @@ if __name__ == "__main__":
     }
     import tqdm
 
-    distribution = ["kiva-functions-compositionality-Counting,Resizing"]
     for case in tqdm.tqdm(distribution):
         main(case)

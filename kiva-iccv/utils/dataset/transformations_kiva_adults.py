@@ -394,34 +394,9 @@ def apply_rotation(image, angle, type="train", train_angle=None, initial_rotatio
     final_correct_angle = combine_angles(initial_rotation, angle)
     final_incorrect_angle = combine_angles(combine_angles(initial_rotation, angle), incorrect_angle)
 
-    def safe_rotate(img, angle_degrees):
-        """Safely rotate image without corner artifacts"""
-        if angle_degrees == 0:
-            return img
-
-        # Calculate the diagonal length to ensure we don't lose any content
-        h, w = img.shape[-2:]
-        diagonal = int((h**2 + w**2) ** 0.5)
-
-        # Pad the image to avoid corner artifacts
-        pad_h = (diagonal - h) // 2
-        pad_w = (diagonal - w) // 2
-
-        # Pad with edge values instead of zeros to avoid black corners
-        padded = F.pad(img, [pad_w, pad_w, pad_h, pad_h], padding_mode="edge")
-
-        # Rotate the padded image
-        rotated = F.rotate(
-            padded, angle_degrees, interpolation=F.InterpolationMode.BILINEAR, fill=0
-        )
-
-        # Crop back to original size
-        return F.center_crop(rotated, [h, w])
-
-    # Use safe rotation to avoid corner artifacts
-    original_image = safe_rotate(image, parse_angle(initial_rotation))
-    correct_image = safe_rotate(original_image, parse_angle(angle))
-    incorrect_image = safe_rotate(original_image, parse_angle(incorrect_angle))
+    original_image = F.rotate(image, parse_angle(initial_rotation), fill=255)
+    correct_image = F.rotate(original_image, parse_angle(angle), fill=255)
+    incorrect_image = F.rotate(original_image, parse_angle(incorrect_angle), fill=255)
 
     if type == "train":
         return original_image, correct_image, final_start_angle, final_correct_angle
