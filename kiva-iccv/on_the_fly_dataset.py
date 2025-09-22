@@ -6,6 +6,17 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.io import read_image
+from utils.dataset import (
+    apply_counting,
+    apply_counting_kiva,
+    apply_reflection,
+    apply_reflection_kiva,
+    apply_resizing,
+    apply_resizing_kiva,
+    apply_rotation,
+    apply_rotation_kiva,
+    paste_on_600,
+)
 
 
 class OnTheFlyKiVADataset(Dataset):
@@ -216,40 +227,34 @@ class OnTheFlyKiVADataset(Dataset):
         incorrect_params = random.sample(param_choices, 2)
 
         if rule == "Counting":
-            from utils.dataset.transformations_kiva import apply_counting
-
-            img_A_initial, img_B_correct, start_count, _ = apply_counting(
+            img_A_initial, img_B_correct, start_count, _ = apply_counting_kiva(
                 img_A, true_param, type="train"
             )
 
-            img_C_initial, img_D_correct, start_count, _ = apply_counting(
+            img_C_initial, img_D_correct, start_count, _ = apply_counting_kiva(
                 img_C, true_param, type="train", initial_count=start_count
             )
 
-            _, img_E_incorrect, _, _ = apply_counting(
+            _, img_E_incorrect, _, _ = apply_counting_kiva(
                 img_C, incorrect_params[0], type="train", initial_count=start_count
             )
-            _, img_F_incorrect, _, _ = apply_counting(
+            _, img_F_incorrect, _, _ = apply_counting_kiva(
                 img_C, incorrect_params[1], type="train", initial_count=start_count
             )
         elif rule == "Reflect":
-            from utils.dataset.transformations_kiva import apply_reflection
-
-            img_B_correct, _, _ = apply_reflection(img_A, true_param, type="train")
-            img_D_correct, _, _ = apply_reflection(img_C, true_param, type="train")
-            img_E_incorrect, _, _ = apply_reflection(img_C, incorrect_params[0], type="train")
-            img_F_incorrect, _, _ = apply_reflection(img_C, incorrect_params[1], type="train")
+            img_B_correct, _, _ = apply_reflection_kiva(img_A, true_param, type="train")
+            img_D_correct, _, _ = apply_reflection_kiva(img_C, true_param, type="train")
+            img_E_incorrect, _, _ = apply_reflection_kiva(img_C, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_reflection_kiva(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva import apply_resizing, paste_on_600
-
             img_A, img_C = self.canvas_resize(img_A), self.canvas_resize(img_C)
 
-            img_B_correct, _, _ = apply_resizing(img_A, true_param, type="train")
-            img_D_correct, _, _ = apply_resizing(img_C, true_param, type="train")
-            img_E_incorrect, _, _ = apply_resizing(img_C, incorrect_params[0], type="train")
-            img_F_incorrect, _, _ = apply_resizing(img_C, incorrect_params[1], type="train")
+            img_B_correct, _, _ = apply_resizing_kiva(img_A, true_param, type="train")
+            img_D_correct, _, _ = apply_resizing_kiva(img_C, true_param, type="train")
+            img_E_incorrect, _, _ = apply_resizing_kiva(img_C, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_resizing_kiva(img_C, incorrect_params[1], type="train")
 
             img_A_initial, img_C_initial = (
                 paste_on_600(img_A),
@@ -257,12 +262,10 @@ class OnTheFlyKiVADataset(Dataset):
             )
 
         elif rule == "Rotation":
-            from utils.dataset.transformations_kiva import apply_rotation
-
-            img_B_correct, _, _ = apply_rotation(img_A, true_param, type="train")
-            img_D_correct, _, _ = apply_rotation(img_C, true_param, type="train")
-            img_E_incorrect, _, _ = apply_rotation(img_C, incorrect_params[0], type="train")
-            img_F_incorrect, _, _ = apply_rotation(img_C, incorrect_params[1], type="train")
+            img_B_correct, _, _ = apply_rotation_kiva(img_A, true_param, type="train")
+            img_D_correct, _, _ = apply_rotation_kiva(img_C, true_param, type="train")
+            img_E_incorrect, _, _ = apply_rotation_kiva(img_C, incorrect_params[0], type="train")
+            img_F_incorrect, _, _ = apply_rotation_kiva(img_C, incorrect_params[1], type="train")
             img_A_initial, img_C_initial = img_A, img_C
 
         else:
@@ -308,8 +311,6 @@ class OnTheFlyKiVADataset(Dataset):
         incorrect_params = random.sample(params_choices, k=2)
 
         if rule == "Counting":
-            from utils.dataset.transformations_kiva_adults import apply_counting
-
             img_A_initial, img_B_correct, _, _ = apply_counting(
                 img_A, true_param, type="train", initial_count=start_transformations[0]
             )
@@ -325,8 +326,6 @@ class OnTheFlyKiVADataset(Dataset):
             )
 
         elif rule == "Reflect":
-            from utils.dataset.transformations_kiva_adults import apply_reflection
-
             img_A_initial, _, _, _ = apply_reflection(img_A, start_transformations[0], type="train")
             img_B_correct, _, _, _ = apply_reflection(img_A_initial, true_param, type="train")
 
@@ -340,8 +339,6 @@ class OnTheFlyKiVADataset(Dataset):
             )
 
         elif rule == "Resizing":
-            from utils.dataset.transformations_kiva_adults import apply_resizing, paste_on_600
-
             img_A, img_C = self.canvas_resize(img_A), self.canvas_resize(img_C)
             img_A_initial, _, _ = apply_resizing(img_A, start_transformations[0], type="train")
             img_C_initial, _, _ = apply_resizing(img_C, start_transformations[1], type="train")
@@ -359,8 +356,6 @@ class OnTheFlyKiVADataset(Dataset):
             img_A_initial, img_C_initial = paste_on_600(img_A_initial), paste_on_600(img_C_initial)
 
         elif rule == "Rotation":
-            from utils.dataset.transformations_kiva_adults import apply_rotation
-
             _, img_A_initial, _, _ = apply_rotation(
                 img_A, start_transformations[0], type="train", initial_rotation="+0"
             )
@@ -414,9 +409,6 @@ class OnTheFlyKiVADataset(Dataset):
         self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
     ) -> tuple:
         """Handle Counting,Reflect composition"""
-        from utils.dataset.transformations_kiva_adults import apply_counting, apply_reflection
-
-        # Get parameters
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_reflect_param = random.choice(self.param_options["kiva-functions"]["Reflect"])
 
@@ -477,13 +469,6 @@ class OnTheFlyKiVADataset(Dataset):
         self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
     ) -> tuple:
         """Handle Counting,Resizing composition"""
-        from utils.dataset.transformations_kiva_adults import (
-            apply_counting,
-            apply_resizing,
-            paste_on_600,
-        )
-
-        # Get parameters
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_resizing_param = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
@@ -549,9 +534,6 @@ class OnTheFlyKiVADataset(Dataset):
         self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
     ) -> tuple:
         """Handle Counting,Rotation composition"""
-
-        from utils.dataset.transformations_kiva_adults import apply_counting, apply_rotation
-
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_rotation_param = random.choice(self.param_options["kiva-functions"]["Rotation"])
 
@@ -615,14 +597,6 @@ class OnTheFlyKiVADataset(Dataset):
         self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
     ) -> tuple:
         """Handle Reflect,Resizing composition"""
-
-        from utils.dataset.transformations_kiva_adults import (
-            apply_reflection,
-            apply_resizing,
-            paste_on_600,
-        )
-
-        # Get parameters
         true_param1 = random.choice(self.param_options["kiva-functions"]["Reflect"])
         true_param2 = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
@@ -633,7 +607,6 @@ class OnTheFlyKiVADataset(Dataset):
             [p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_param2]
         )
 
-        # Get starting states
         start_reflect_A, start_reflect_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Reflect"],
             k=2,
@@ -685,14 +658,6 @@ class OnTheFlyKiVADataset(Dataset):
         self, img_A_base: torch.Tensor, img_C_base: torch.Tensor
     ) -> tuple:
         """Handle Resizing,Rotation composition"""
-
-        from utils.dataset.transformations_kiva_adults import (
-            apply_resizing,
-            apply_rotation,
-            paste_on_600,
-        )
-
-        # Get parameters
         true_param1 = random.choice(self.param_options["kiva-functions"]["Resizing"])
         true_param2 = random.choice(self.param_options["kiva-functions"]["Rotation"])
 

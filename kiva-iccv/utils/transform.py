@@ -16,6 +16,7 @@ import os
 from multiprocessing import Pool
 
 import tqdm
+from on_the_fly_dataset import OnTheFlyKiVADataset
 from PIL import Image
 
 
@@ -115,6 +116,18 @@ def process_single_image(args: tuple[str, str, str]) -> None:
     save_split_parts(img_path, output_dir)
 
 
+otf_dataset: OnTheFlyKiVADataset | None = None
+
+
+def init_otf_dataset() -> None:
+    global otf_dataset
+    if otf_dataset is not None:
+        return
+    otf_dataset = OnTheFlyKiVADataset(
+        objects_dir="./data/KiVA/untransformed objects", distribution_config={}
+    )
+
+
 def transform_dataset(dataset_json_path: str, output_dir: str) -> None:
     """
     Transform the dataset into the new format using multiprocessing.
@@ -129,7 +142,7 @@ def transform_dataset(dataset_json_path: str, output_dir: str) -> None:
     args_list = [(trial_id, dataset_dir, output_dir) for trial_id in dataset.keys()]
 
     # Use multiprocessing pool to process images in parallel
-    with Pool(processes=16) as pool:
+    with Pool(processes=16, initializer=init_otf_dataset) as pool:
         list(
             tqdm.tqdm(
                 pool.imap(process_single_image, args_list),
