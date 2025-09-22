@@ -214,8 +214,6 @@ def apply_resizing(image, factor: str, type="train"):
         - if type is "train": (correct_image, 0, factor)
         - if type is "test": (correct_image, incorrect_image, 0, factor, incorrect_option)
     """
-    # --- 0. Apply the resizing transformation ---
-    image = transforms.Resize((300, 300), antialias=True)(image)
 
     # --- 1. Parse the factor string to get scale and axis ---
     try:
@@ -237,14 +235,6 @@ def apply_resizing(image, factor: str, type="train"):
             "Expected a float followed by 'X', 'Y', or 'XY'. "
             "Examples: '0.8X', '1.2Y', '1.5XY'."
         ) from e
-
-    # --- 2. Handle the pre-enlarging step for downscaling ---
-    enlarge_first = scale < 1.0
-    if enlarge_first:
-        H, W = image.shape[1:]
-        new_H = int(H * (1.0 / scale))
-        new_W = int(W * (1.0 / scale))
-        image = F.resize(image, (new_H, new_W), antialias=True)
 
     # --- 3. Determine correct and incorrect transformation parameters ---
     if axis == "XY":
@@ -281,15 +271,15 @@ def apply_resizing(image, factor: str, type="train"):
 
     # --- 5. Return based on the specified type ---
     if type == "train":
-        return paste_on_600(correct_image), 0, factor
+        return correct_image, 0, factor
 
     elif type == "test":
         incorrect_image = transforms.Resize(
             (incorrect_new_height, incorrect_new_width), antialias=True
         )(correct_image)
         return (
-            paste_on_600(correct_image),
-            paste_on_600(incorrect_image),
+            correct_image,
+            incorrect_image,
             0,
             factor,
             incorrect_option,

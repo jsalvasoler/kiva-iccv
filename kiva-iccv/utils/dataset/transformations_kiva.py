@@ -186,13 +186,6 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
 
 def apply_resizing(image, factor, type):
-    # apply the resizing transformation
-    base_img = transforms.Resize((300, 300), antialias=True)(image)
-
-    if factor.startswith("0.5"):
-        H, W = image.shape[1:]
-        image = F.resize(image, (H * 2, W * 2), antialias=True)
-
     if factor == "0.5XY":
         correct_resize_factor = 0.5
         incorrect_resize_factor = 2.0
@@ -208,7 +201,7 @@ def apply_resizing(image, factor, type):
     else:
         raise ValueError(f"Invalid resize factor. Choose from '0.5XY' or '2XY'. Got {factor}.")
 
-    new_width, new_height = base_img.shape[2], base_img.shape[1]  # Original dimensions
+    new_width, new_height = image.shape[2], image.shape[1]  # Original dimensions
 
     correct_new_width = int(new_width * correct_resize_factor)
     correct_new_height = int(new_height * correct_resize_factor)
@@ -217,12 +210,12 @@ def apply_resizing(image, factor, type):
     incorrect_new_height = int(new_height * incorrect_resize_factor)
 
     correct_image = transforms.Resize((correct_new_height, correct_new_width), antialias=True)(
-        base_img
+        image
     )
 
     incorrect_image = transforms.Resize(
         (incorrect_new_height, incorrect_new_width), antialias=True
-    )(base_img)
+    )(image)
 
     if type == "train":
         return paste_on_600(correct_image), 0, factor
