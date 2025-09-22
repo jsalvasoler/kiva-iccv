@@ -130,7 +130,7 @@ def dataset_factory(args, config: Config) -> Dataset:
         return OnTheFlyKiVADataset(
             objects_dir="./data/KiVA/untransformed objects",
             distribution_config=distribution,
-            epoch_length=100,
+            epoch_length=config.oft_epoch_length,
         )
 
     return VisualAnalogyDataset(config.data_dir, config.metadata_path)
