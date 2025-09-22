@@ -437,37 +437,37 @@ class OnTheFlyKiVADataset(Dataset):
         )
 
         def make_initial(image: torch.Tensor, start_count: int, start_reflect: str) -> torch.Tensor:
-            _, reflected, _, _ = apply_reflection(image, start_reflect, type="train")
+            reflected, _, _, _ = apply_reflection(image, start_reflect, type="train")
             initial_grid, _, _, _ = apply_counting(
                 reflected, "+1", type="train", initial_count=start_count
             )
-            return initial_grid
+            return initial_grid, reflected
 
         def apply_true_chain(
             image: torch.Tensor, start_count: int, true_count: str, true_reflect: str
         ) -> torch.Tensor:
-            _, reflected_correct, _, _ = apply_reflection(image, true_reflect, type="train")
+            reflected_correct, _, _, _ = apply_reflection(image, true_reflect, type="train")
             _, out, _, _ = apply_counting(
                 reflected_correct, true_count, type="train", initial_count=start_count
             )
             return out
 
-        img_A_initial = make_initial(img_A_base, start_count_A, start_reflect_A)
-        img_C_initial = make_initial(img_C_base, start_count_C, start_reflect_C)
+        img_A_initial, img_A_reflected = make_initial(img_A_base, start_count_A, start_reflect_A)
+        img_C_initial, img_C_reflected = make_initial(img_C_base, start_count_C, start_reflect_C)
 
         img_B_correct = apply_true_chain(
-            img_A_base, start_count_A, true_count_param, true_reflect_param
+            img_A_reflected, start_count_A, true_count_param, true_reflect_param
         )
         img_D_correct = apply_true_chain(
-            img_C_base, start_count_C, true_count_param, true_reflect_param
+            img_C_reflected, start_count_C, true_count_param, true_reflect_param
         )
 
         img_E_incorrect = apply_true_chain(
-            img_C_base, start_count_C, true_count_param, incorrect_reflect_param
+            img_C_reflected, start_count_C, true_count_param, incorrect_reflect_param
         )
 
         img_F_incorrect = apply_true_chain(
-            img_C_base, start_count_C, incorrect_count_param, true_reflect_param
+            img_C_reflected, start_count_C, incorrect_count_param, true_reflect_param
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
@@ -573,13 +573,13 @@ class OnTheFlyKiVADataset(Dataset):
         def make_initial(
             image: torch.Tensor, start_count: int, start_rotation: str
         ) -> torch.Tensor:
-            _, img_out, _, _ = apply_rotation(
+            _, rotated, _, _ = apply_rotation(
                 image, start_rotation, type="train", initial_rotation="+0"
             )
             img_out, _, _, _ = apply_counting(
-                img_out, "+1", type="train", initial_count=start_count
+                rotated, "+1", type="train", initial_count=start_count
             )
-            return img_out
+            return img_out, rotated
 
         def apply_true_chain(
             image: torch.Tensor, start_count: int, true_count: str, true_rotation: str
@@ -592,20 +592,20 @@ class OnTheFlyKiVADataset(Dataset):
             )
             return img_out
 
-        img_A_initial = make_initial(img_A_base, start_count_A, start_rotation_A)
-        img_C_initial = make_initial(img_C_base, start_count_C, start_rotation_C)
+        img_A_initial, img_A_rotated = make_initial(img_A_base, start_count_A, start_rotation_A)
+        img_C_initial, img_C_rotated = make_initial(img_C_base, start_count_C, start_rotation_C)
 
         img_B_correct = apply_true_chain(
-            img_A_initial, start_count_A, true_count_param, true_rotation_param
+            img_A_rotated, start_count_A, true_count_param, true_rotation_param
         )
         img_D_correct = apply_true_chain(
-            img_C_initial, start_count_C, true_count_param, true_rotation_param
+            img_C_rotated, start_count_C, true_count_param, true_rotation_param
         )
         img_E_incorrect = apply_true_chain(
-            img_C_initial, start_count_C, true_count_param, incorrect_rotation_param
+            img_C_rotated, start_count_C, true_count_param, incorrect_rotation_param
         )
         img_F_incorrect = apply_true_chain(
-            img_C_initial, start_count_C, incorrect_count_param, true_rotation_param
+            img_C_rotated, start_count_C, incorrect_count_param, true_rotation_param
         )
 
         a, b, c = img_A_initial, img_B_correct, img_C_initial
