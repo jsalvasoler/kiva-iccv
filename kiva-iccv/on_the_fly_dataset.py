@@ -164,12 +164,10 @@ class OnTheFlyKiVADataset(Dataset):
             raise ValueError(f"Invalid true parameter: {true_param}")
 
     def _get_counting_incorrect_param_options(self, true_param: str, start_count: int) -> list[str]:
-        true_final_count = start_count + int(true_param[1:])
-        possible_final_counts = [x for x in list(range(1, 10)) if x != true_final_count]
         return [
-            f"+{c - start_count}" if c - start_count > 0 else f"-{start_count - c}"
-            for c in possible_final_counts
-            if abs(c - start_count) <= 2 and c != start_count
+            f"{delta:+}"
+            for delta in [-2, -1, 1, 2]
+            if 1 <= start_count + delta <= 9 and f"{delta:+}" != true_param
         ]
 
     def __len__(self) -> int:
@@ -489,6 +487,9 @@ class OnTheFlyKiVADataset(Dataset):
         true_count_param = random.choice(self.param_options["kiva-functions"]["Counting"])
         true_resizing_param = random.choice(self.param_options["kiva-functions"]["Resizing"])
 
+        true_count_param = "-1"
+        true_resizing_param = "0.5Y"
+
         incorrect_options = [
             p for p in self.param_options["kiva-functions"]["Resizing"] if p != true_resizing_param
         ]
@@ -503,6 +504,16 @@ class OnTheFlyKiVADataset(Dataset):
         start_resize_A, start_resize_C = random.sample(
             self.start_transformation_options["kiva-functions"]["Resizing"], k=2
         )
+
+        print("DEBUG: params")
+        print(f" - true_count_param: {true_count_param}")
+        print(f" - true_resizing_param: {true_resizing_param}")
+        print(f" - incorrect_resize_param: {incorrect_resize_param}")
+        print(f" - incorrect_count_param: {incorrect_count_param}")
+        print(f" - start_count_A: {start_count_A}")
+        print(f" - start_count_C: {start_count_C}")
+        print(f" - start_resize_A: {start_resize_A}")
+        print(f" - start_resize_C: {start_resize_C}")
 
         def make_initial(image: torch.Tensor, start_count: int, start_resize: str) -> torch.Tensor:
             image = self.canvas_resize(image)
@@ -902,6 +913,6 @@ if __name__ == "__main__":
     }
     import tqdm
 
-    # distribution = ["kiva-functions-Resizing"]
+    distribution = ["kiva-functions-compositionality-Counting,Resizing"]
     for case in tqdm.tqdm(distribution):
         main(case)
