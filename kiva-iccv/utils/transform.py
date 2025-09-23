@@ -16,19 +16,23 @@ import os
 from multiprocessing import Pool
 
 import tqdm
-from on_the_fly_dataset import OnTheFlyKiVADataset
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def investigate_sizes(dataset_json_path: str) -> None:
     """Investigate image sizes in the dataset."""
-    with open(dataset_json_path) as f:
-        dataset = json.load(f)
+
+    image_dir = dataset_json_path.replace(".json", "")
+    images = [f for f in os.listdir(image_dir) if f.endswith(".jpg")]
+    if not dataset_json_path.endswith("test.json"):
+        with open(dataset_json_path) as f:
+            dataset = json.load(f)
+            assert len(images) == len(dataset), "Number of images and dataset must match"
 
     sizes = []
 
-    for trial_id, _ in dataset.items():
-        img_path = dataset_json_path.replace(".json", f"/{trial_id}.jpg")
+    for image in images:
+        img_path = f"{image_dir}/{image}"
         img = Image.open(img_path)
         sizes.append(img.size)
 
@@ -59,24 +63,44 @@ def split_kiva_image(img_path: str) -> dict[str, Image.Image]:
     # Load the composite image and get its dimensions
     img = Image.open(img_path)
 
-    s = 560
+    # get the width and height of the image
+    w, h = img.size
+    mid_w = w // 2
+
+    s = 600
     v_top = 50
-    v_bottom = 860
-    mid_w = 3795 // 2
-    ex_key = 1299
+    v_bottom = 830
+    ex_key = 1294
+    test_before_key = 52
+    a_key = 653
+    b_key = 1898
+    c_key = 3143
 
     CROP_BOXES = {
         "ex_before": (ex_key, v_top, ex_key + s, v_top + s),
         "ex_after": (2 * mid_w - ex_key - s, v_top, 2 * mid_w - ex_key, v_top + s),
-        "test_before": (60, v_bottom, 60 + s, v_bottom + s),
-        "choice_a": (675, v_bottom, 675 + s, v_bottom + s),
-        "choice_b": (1915, v_bottom, 1915 + s, v_bottom + s),
-        "choice_c": (3175, v_bottom, 3175 + s, v_bottom + s),
+        "test_before": (test_before_key, v_bottom, test_before_key + s, v_bottom + s),
+        "choice_a": (a_key, v_bottom, a_key + s, v_bottom + s),
+        "choice_b": (b_key, v_bottom, b_key + s, v_bottom + s),
+        "choice_c": (c_key, v_bottom, c_key + s, v_bottom + s),
     }
+
+    def add_white_border(img, border_size=5):
+        # Create a drawing context
+        draw = ImageDraw.Draw(img)
+        w, h = img.size
+
+        draw.rectangle([(0, 0), (w, border_size)], fill="white")
+        draw.rectangle([(0, h - border_size), (w, h)], fill="white")
+        draw.rectangle([(0, 0), (border_size, h)], fill="white")
+        draw.rectangle([(w - border_size, 0), (w, h)], fill="white")
+
+        return img
 
     parts = {}
     for part_name, box in CROP_BOXES.items():
-        parts[part_name] = img.crop(box)
+        parts[part_name] = add_white_border(img.crop(box), border_size=4)
+        assert parts[part_name].size == (600, 600), f"Part {part_name} has wrong size"
 
     return parts
 
@@ -111,43 +135,32 @@ def process_single_image(args: tuple[str, str, str]) -> None:
     Args:
         args: Tuple of (trial_id, dataset_dir, output_dir)
     """
-    trial_id, dataset_dir, output_dir = args
-    img_path = os.path.join(dataset_dir, f"{trial_id}.jpg")
+    image, dataset_dir, output_dir = args
+    img_path = os.path.join(dataset_dir, image)
     save_split_parts(img_path, output_dir)
-
-
-otf_dataset: OnTheFlyKiVADataset | None = None
-
-
-def init_otf_dataset() -> None:
-    global otf_dataset
-    if otf_dataset is not None:
-        return
-    otf_dataset = OnTheFlyKiVADataset(
-        objects_dir="./data/KiVA/untransformed objects", distribution_config={}
-    )
 
 
 def transform_dataset(dataset_json_path: str, output_dir: str) -> None:
     """
     Transform the dataset into the new format using multiprocessing.
     """
-    with open(dataset_json_path) as f:
-        dataset = json.load(f)
+    image_dir = dataset_json_path.replace(".json", "")
+    which = image_dir.split("/")[-1]
+    images = [f for f in os.listdir(image_dir) if f.endswith(".jpg")]
 
     # Get the dataset directory from the json path
     dataset_dir = dataset_json_path.replace(".json", "")
 
     # Prepare arguments for multiprocessing
-    args_list = [(trial_id, dataset_dir, output_dir) for trial_id in dataset.keys()]
+    args_list = [(image, dataset_dir, output_dir) for image in images]
 
     # Use multiprocessing pool to process images in parallel
-    with Pool(processes=16, initializer=init_otf_dataset) as pool:
+    with Pool(processes=16) as pool:
         list(
             tqdm.tqdm(
                 pool.imap(process_single_image, args_list),
                 total=len(args_list),
-                desc="Processing images",
+                desc=f"Processing {which} dataset",
             )
         )
 

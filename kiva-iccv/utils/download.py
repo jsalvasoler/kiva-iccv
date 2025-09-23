@@ -1,7 +1,9 @@
 import json
 import os
 import shutil
+import zipfile
 
+import requests
 from helper import get_content_path, setup_kiva_data_set
 
 
@@ -56,6 +58,37 @@ def download_data(data_path: str):
     print("\n--- KiVA Data Setup Complete! ---")
 
 
+def download_test_data():
+    # URL and target paths
+    url = "https://storage.googleapis.com/kiva-challenge-bucket/test.zip"
+    target_dir = "./data"
+    os.makedirs(target_dir, exist_ok=True)
+    zip_path = os.path.join(target_dir, "test.zip")
+
+    # Download the zip file
+    print("Downloading test data...")
+    response = requests.get(url, stream=True)
+    with open(zip_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+    print("Download complete.")
+
+    # Unzip the contents
+    print("Unzipping test data...")
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(target_dir)
+    print("Unzipping complete.")
+
+    # (Optional) remove the zip file after extraction and the __MACOSX directory
+    macosx_dir = os.path.join(target_dir, "__MACOSX")
+    if os.path.exists(macosx_dir):
+        shutil.rmtree(macosx_dir)
+    os.remove(zip_path)
+    print("Done! Test data is in:", target_dir)
+
+
 if __name__ == "__main__":
     data_path = "./data/"  # all KiVA data (images and annotations) will be placed here
     download_data(data_path)
+    download_test_data()
