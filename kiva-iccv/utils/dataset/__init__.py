@@ -1,26 +1,35 @@
-"""
-Utility functions for KiVA dataset transformations.
-This module provides a clean interface to the transformation functions
-from the transformations_kiva-adults.py file.
-"""
-
-from utils.dataset.transformations_kiva_adults import (
-    apply_color,
-    apply_counting,
-    apply_reflection,
-    apply_resizing,
-    apply_rotation,
-    generate_grid_image,
-    paste_on_600,
+from utils.dataset.apply_kiva import (
+    _kiva_counting,
+    _kiva_reflect,
+    _kiva_resizing,
+    _kiva_rotation,
+)
+from utils.dataset.apply_kiva_functions import (
+    _kiva_functions_counting,
+    _kiva_functions_reflect,
+    _kiva_functions_resizing,
+    _kiva_functions_rotation,
+)
+from utils.dataset.apply_kiva_functions_compositionality import (
+    _kiva_functions_compositionality_counting_reflect,
+    _kiva_functions_compositionality_counting_resizing,
+    _kiva_functions_compositionality_counting_rotation,
+    _kiva_functions_compositionality_reflect_resizing,
+    _kiva_functions_compositionality_resizing_rotation,
 )
 
-# Export the functions that the dataset.py expects
 __all__ = [
-    "apply_counting",
-    "apply_reflection",
-    "apply_resizing",
-    "apply_rotation",
-    "apply_color",
-    "generate_grid_image",
-    "paste_on_600",
+    "_kiva_counting",
+    "_kiva_reflect",
+    "_kiva_resizing",
+    "_kiva_rotation",
+    "_kiva_functions_counting",
+    "_kiva_functions_reflect",
+    "_kiva_functions_resizing",
+    "_kiva_functions_rotation",
+    "_kiva_functions_compositionality_counting_reflect",
+    "_kiva_functions_compositionality_counting_resizing",
+    "_kiva_functions_compositionality_counting_rotation",
+    "_kiva_functions_compositionality_reflect_resizing",
+    "_kiva_functions_compositionality_resizing_rotation",
 ]

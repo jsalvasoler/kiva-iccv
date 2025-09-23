@@ -11,6 +11,7 @@ import os
 from collections import Counter
 from typing import Any
 
+from config import create_config_from_args
 from utils.helper import (
     LEVEL_KIVA_DB_KEY,
     LEVEL_KIVA_FUNCTIONS_COMPOSITIONALITY_DB_KEY,
@@ -20,7 +21,6 @@ from utils.helper import (
     plot_tags,
     radar_plot_pt,
 )
-from utils.transform import get_dataset_paths
 
 
 def load_submission_data(submission_path: str) -> list[dict[str, str]]:
@@ -383,7 +383,7 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     print("\n🔍 Running evaluation analysis...")
 
     # Determine data type based on test dataset name
-    _, metadata_path = get_dataset_paths(test_dataset_name)
+    config = create_config_from_args(args, for_task="test")
 
     # Load submission data
     with open(submission_path) as f:
@@ -391,7 +391,7 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     print(f"📄 Loaded {len(submission_data)} predictions from submission file")
 
     # Load ground truth data
-    ground_truth_data = load_validation_data(metadata_path)
+    ground_truth_data = load_validation_data(config.metadata_path)
 
     # Run evaluation
     results = evaluate_submission(submission_data, ground_truth_data)

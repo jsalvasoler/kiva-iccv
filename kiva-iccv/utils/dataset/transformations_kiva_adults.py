@@ -180,7 +180,6 @@ def paste_on_600(img: torch.Tensor, canvas_size: int = 600) -> torch.Tensor:
 
     # Down-scale very large inputs so the larger edge is 600
     if max(h, w) > canvas_size:
-        print(f"WARNING: Image is larger than 600x600: {h}x{w}")
         scale = canvas_size / float(max(h, w))
         new_h, new_w = int(round(h * scale)), int(round(w * scale))
         img = F.resize(img, (new_h, new_w), antialias=True)
@@ -231,9 +230,10 @@ def apply_resizing(image, factor: str, type="train"):
             raise ValueError
     except (ValueError, IndexError) as e:
         raise ValueError(
-            "Invalid resize factor format. "
-            "Expected a float followed by 'X', 'Y', or 'XY'. "
-            "Examples: '0.8X', '1.2Y', '1.5XY'."
+            f"Invalid resize factor format. "
+            f"Expected a float followed by 'X', 'Y', or 'XY'. "
+            f"Examples: '0.8X', '1.2Y', '1.5XY'."
+            f"Got {factor}."
         ) from e
 
     # --- 3. Determine correct and incorrect transformation parameters ---
@@ -347,7 +347,8 @@ def apply_rotation(image, angle, type="train", train_angle=None, initial_rotatio
         incorrect_angle = random.choice(matches[angle])
     else:
         raise ValueError(
-            "Invalid rotation angle. Choose from '+0', '+45', '-45', '+90', '-90', '+135', '-135'."
+            f"Invalid rotation angle. Choose from '+0', '+45', '-45', '+90', '-90', '+135', '-135'."
+            f"Got {angle}."
         )
 
     initial_rotation = (

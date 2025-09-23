@@ -11,10 +11,10 @@ from config import Config, create_argument_parser, create_config_from_args
 from dataset import VisualAnalogyDataset
 from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
 from model import SiameseAnalogyNetwork
-from torch.utils.data import DataLoader
+from on_the_fly_dataset import OnTheFlyKiVADataset
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from utils.evaluate import run_evaluation_analysis
-from utils.transform import get_dataset_paths
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
@@ -108,6 +108,32 @@ def print_experiment_results(
     elif experiment_type == "test":
         print(f"  Test accuracy:         {test_accuracy:.2f}%")
     print("\n" + ("=" * 80))
+
+
+def dataset_factory(args, config: Config) -> Dataset:
+    distribution = {
+        "kiva-Counting": 64,
+        "kiva-Reflect": 32,
+        "kiva-Resizing": 32,
+        "kiva-Rotation": 48,
+        "kiva-functions-Counting": 128,
+        "kiva-functions-Reflect": 32,
+        "kiva-functions-Resizing": 96,
+        "kiva-functions-Rotation": 112,
+        "kiva-functions-compositionality-Counting,Reflect": 256,
+        "kiva-functions-compositionality-Counting,Resizing": 768,
+        "kiva-functions-compositionality-Counting,Rotation": 896,
+        "kiva-functions-compositionality-Reflect,Resizing": 192,
+        "kiva-functions-compositionality-Resizing,Rotation": 96,
+    }
+    if config.task == "train" and config.use_otf:
+        return OnTheFlyKiVADataset(
+            objects_dir="./data/KiVA/untransformed objects",
+            distribution_config=distribution,
+            epoch_length=config.oft_epoch_length,
+        )
+
+    return VisualAnalogyDataset(config.data_dir, config.metadata_path)
 
 
 def evaluate(
@@ -231,9 +257,8 @@ def init_neptune(config: Config, args, experiment_type: str):
 def train(args) -> str | None:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
-    train_data_dir, train_meta_path = get_dataset_paths(args.train_on)
-    train_config = create_config_from_args(args, train_data_dir, train_meta_path)
-    train_dataset = VisualAnalogyDataset(train_config.data_dir, train_config.metadata_path)
+    train_config = create_config_from_args(args, for_task="train")
+    train_dataset = dataset_factory(args, train_config)
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config.batch_size,
@@ -241,17 +266,17 @@ def train(args) -> str | None:
         num_workers=train_config.num_workers,
     )
 
-    val_data_dir, val_meta_path = get_dataset_paths(args.validate_on)
-    val_dataset = VisualAnalogyDataset(val_data_dir, val_meta_path)
+    val_config = create_config_from_args(args, for_task="validation")
+    val_dataset = dataset_factory(args, val_config)
 
     if args.validate_on == "validation_sample":
         val_dataset.sample_validation_set(int(len(val_dataset) * 0.1))
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=train_config.batch_size,
+        batch_size=val_config.batch_size,
         shuffle=False,
-        num_workers=train_config.num_workers,
+        num_workers=val_config.num_workers,
     )
 
     # 2. Initialize Neptune logging
@@ -388,8 +413,7 @@ def train(args) -> str | None:
 def test(args, neptune_run_id: str | None) -> None:
     """Testing function that evaluates the trained model."""
     print(f"\n🧪 Starting testing on '{args.test_on}' dataset...")
-    test_data_dir, test_meta_path = get_dataset_paths(args.test_on)
-    test_config = create_config_from_args(args, test_data_dir, test_meta_path)
+    test_config = create_config_from_args(args, for_task="test")
 
     # Initialize Neptune logging
     if neptune_run_id is None:
@@ -420,7 +444,7 @@ def test(args, neptune_run_id: str | None) -> None:
     model.load_state_dict(torch.load(model_path))
 
     # 2. Setup the test dataloader
-    test_dataset = VisualAnalogyDataset(test_config.data_dir, test_config.metadata_path)
+    test_dataset = dataset_factory(args, test_config)
     test_loader = DataLoader(
         test_dataset,
         batch_size=test_config.batch_size,
