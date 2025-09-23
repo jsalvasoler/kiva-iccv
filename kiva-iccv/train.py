@@ -9,7 +9,11 @@ import torch.nn as nn
 import torch.optim as optim
 from config import Config, create_argument_parser, create_config_from_args
 from dataset import VisualAnalogyDataset
-from loss import ContrastiveAnalogyLoss, StandardTripletAnalogyLoss
+from loss import (
+    ContrastiveAnalogyLoss,
+    SoftmaxAnalogyLoss,
+    StandardTripletAnalogyLoss,
+)
 from model import SiameseAnalogyNetwork
 from on_the_fly_dataset import OnTheFlyKiVADataset
 from torch.utils.data import DataLoader, Dataset
@@ -286,19 +290,35 @@ def train(args) -> str | None:
     # Setup output directory if Neptune is working
     model_save_path = setup_output_directory_for_training(args, neptune_run)
 
-    # Initialize model, loss, and optimizer
+    # Initialize model
     model = SiameseAnalogyNetwork(
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
         transformation_net=train_config.transformation_net,
     ).to(device)
-    if train_config.loss_type == "standard_triplet":
-        criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
-    elif train_config.loss_type == "contrastive":
-        criterion = ContrastiveAnalogyLoss(margin=train_config.margin)
-    optimizer = optim.Adam(
-        model.parameters(), lr=train_config.learning_rate, weight_decay=train_config.weight_decay
+
+    # Initialize loss
+    criterion = {
+        "standard_triplet": StandardTripletAnalogyLoss(margin=train_config.margin),
+        "contrastive": ContrastiveAnalogyLoss(margin=train_config.margin),
+        "softmax": SoftmaxAnalogyLoss(temperature=train_config.temperature),
+    }[train_config.loss_type]
+
+    # Optimizer
+    optimizer = optim.AdamW(
+        [
+            {"params": model.encoder.parameters(), "lr": train_config.learning_rate * 0.1},
+            {
+                "params": list(model.projection.parameters())
+                + list(model.transformation_net.parameters()),
+                "lr": train_config.learning_rate,
+            },
+        ],
+        weight_decay=train_config.weight_decay,
     )
+
+    # Scheduler
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_config.epochs)
 
     print(
         f"\n🚀 Starting training on '{args.train_on}' dataset,"
@@ -339,6 +359,7 @@ def train(args) -> str | None:
             loss = criterion(model_outputs, correct_idx)
             loss.backward()
             optimizer.step()
+            scheduler.step()
             running_loss += loss.item()
 
             # Calculate training accuracy on-the-fly

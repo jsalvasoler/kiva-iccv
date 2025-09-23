@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ContrastiveAnalogyLoss(nn.Module):
@@ -77,3 +78,37 @@ class StandardTripletAnalogyLoss(nn.Module):
 
         # We calculate two loss terms per sample in the batch
         return total_loss / (batch_size * 2)
+
+
+class SoftmaxAnalogyLoss(nn.Module):
+    def __init__(self, temperature: float = 0.07):
+        """
+        temperature < 1.0 sharpens distributions, >1.0 smooths them.
+        Defaults to 0.07, like in InfoNCE/SimCLR.
+        """
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(
+        self,
+        model_outputs: tuple,
+        correct_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        # Unpack the vectors produced by the network
+        t_example, t_choice_a, t_choice_b, t_choice_c = model_outputs
+
+        # Compute cosine similarities for each choice
+        sim_a = torch.cosine_similarity(t_example, t_choice_a, dim=1)
+        sim_b = torch.cosine_similarity(t_example, t_choice_b, dim=1)
+        sim_c = torch.cosine_similarity(t_example, t_choice_c, dim=1)
+
+        # Stack into (batch_size, 3)
+        sims = torch.stack([sim_a, sim_b, sim_c], dim=1)
+
+        # Scale by temperature (like in contrastive learning)
+        sims = sims / self.temperature
+
+        # Apply cross-entropy loss directly
+        loss = F.cross_entropy(sims, correct_indices)
+
+        return loss

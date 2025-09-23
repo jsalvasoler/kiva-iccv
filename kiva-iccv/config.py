@@ -16,8 +16,9 @@ class Config(BaseModel):
     use_otf: bool = False
 
     # Loss
-    loss_type: Literal["standard_triplet", "contrastive"] = "standard_triplet"
+    loss_type: Literal["standard_triplet", "contrastive", "softmax"] = "standard_triplet"
     margin: float = 0.5
+    temperature: float = 0.07
 
     # Model & Training
     transformation_net: bool = True
@@ -79,6 +80,7 @@ def create_config_from_args(args, for_task: Literal["train", "validation", "test
         "use_otf": args.use_otf,
         "loss_type": args.loss_type,
         "margin": args.margin,
+        "temperature": args.temperature,
         "transformation_net": args.transformation_net,
         "embedding_dim": args.embedding_dim,
         "freeze_encoder": args.freeze_encoder,
@@ -154,6 +156,9 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Loss type",
     )
     parser.add_argument("--margin", type=float, default=0.5, help="Margin for loss functions")
+    parser.add_argument(
+        "--temperature", type=float, default=0.07, help="Temperature for loss functions"
+    )
     parser.add_argument(
         "--transformation_net", action="store_true", help="Use transformation network"
     )
