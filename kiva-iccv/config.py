@@ -29,7 +29,7 @@ class Config(BaseModel):
     epochs: int = 5
     num_workers: int = 8
     device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
-    oft_epoch_length: int = 8192  # essentially regulates how often we evaluate
+    oft_epoch_length: int = 8192 * 2  # essentially regulates how often we evaluate
 
     # Neptune logging
     use_neptune: bool = False

@@ -245,6 +245,7 @@ def init_neptune(config: Config, args, experiment_type: str):
         "batch_size": config.batch_size,
         "epochs": config.epochs,
         "num_workers": config.num_workers,
+        "use_otf": config.use_otf,
     }
 
     neptune_url = neptune_run.get_url()
