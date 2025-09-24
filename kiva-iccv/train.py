@@ -361,7 +361,6 @@ def train(args) -> str | None:
             loss = criterion(model_outputs, correct_idx)
             loss.backward()
             optimizer.step()
-            scheduler.step()
             running_loss += loss.item()
 
             # Calculate training accuracy on-the-fly
@@ -378,6 +377,7 @@ def train(args) -> str | None:
             current_train_acc = 100 * train_correct / train_total if train_total > 0 else 0
             progress_bar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{current_train_acc:.1f}%")
 
+        scheduler.step()
         avg_train_loss = running_loss / len(train_loader)
         train_accuracy = 100 * train_correct / train_total
 
