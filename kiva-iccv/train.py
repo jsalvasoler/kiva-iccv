@@ -310,7 +310,9 @@ def train(args) -> str | None:
             {"params": model.encoder.parameters(), "lr": train_config.learning_rate * 0.1},
             {
                 "params": list(model.projection.parameters())
-                + list(model.transformation_net.parameters()),
+                + list(model.transformation_net.parameters())
+                if model.transformation_net
+                else [],
                 "lr": train_config.learning_rate,
             },
         ],
@@ -394,7 +396,7 @@ def train(args) -> str | None:
             neptune_run["training/train_loss"].append(avg_train_loss)
             neptune_run["training/train_accuracy"].append(train_accuracy)
             neptune_run["training/val_accuracy"].append(val_accuracy)
-            neptune_run["training/learning_rate"].append(train_config.learning_rate)
+            neptune_run["training/learning_rate"].append(scheduler.get_last_lr()[0])
 
         # --- 💾 Save the best model (only if Neptune is working) ---
         if val_accuracy > best_accuracy:
