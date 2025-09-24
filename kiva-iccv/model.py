@@ -1,7 +1,25 @@
+from typing import Literal
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
+
+
+def get_encoder(encoder_name: Literal["resnet18", "resnet50"]) -> tuple[nn.Module, int]:
+    """
+    Dynamically gets a pretrained ResNet model and removes its final layer.
+    Returns both the encoder and the number of input features for the projection layer.
+    """
+    try:
+        model_constructor = getattr(models, encoder_name)
+    except AttributeError:
+        raise ValueError(f"Encoder name '{encoder_name}' not supported.") from None
+
+    resnet = model_constructor(weights="IMAGENET1K_V1")
+    encoder = nn.Sequential(*list(resnet.children())[:-1])
+
+    return encoder, resnet.fc.in_features
 
 
 class SiameseAnalogyNetwork(nn.Module):
@@ -10,24 +28,17 @@ class SiameseAnalogyNetwork(nn.Module):
         embedding_dim: int = 512,
         freeze_encoder: bool = False,
         transformation_net: bool = False,
+        encoder_name: Literal["resnet18", "resnet50"] = "resnet18",
     ):
         super().__init__()
-        resnet = models.resnet18(weights="IMAGENET1K_V1")
-        self.encoder = nn.Sequential(*list(resnet.children())[:-1])
+        self.encoder, encoder_output_dim = get_encoder(encoder_name)
 
         if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-            # ruff: noqa: ERA001
-            # # Train the last layers of the last ResNet block (~2M parameters)
-            # for param in self.encoder[7][1].conv2.parameters():  # conv
-            #     param.requires_grad = True
-            # for param in self.encoder[7][1].bn2.parameters():  # batch norm
-            #     param.requires_grad = True
-
         self.projection = nn.Sequential(
-            nn.Linear(resnet.fc.in_features, embedding_dim),
+            nn.Linear(encoder_output_dim, embedding_dim),
             nn.ReLU(inplace=True),
             nn.Dropout(0.2),
             nn.Linear(embedding_dim, embedding_dim),

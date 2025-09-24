@@ -235,7 +235,8 @@ def init_neptune(config: Config, args, experiment_type: str):
         project=config.neptune_project,
         api_token=config.neptune_api_token,
         name=f"kiva-iccv-{experiment_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        tags=[tag for tag, flag in (("train", args.do_train), ("test", args.do_test)) if flag],
+        tags=[tag for tag, flag in (("train", args.do_train), ("test", args.do_test)) if flag]
+        + [config.encoder_name, config.loss_type],
     )
 
     # Log configuration parameters
@@ -295,6 +296,7 @@ def train(args) -> str | None:
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
         transformation_net=train_config.transformation_net,
+        encoder_name=train_config.encoder_name,
     ).to(device)
 
     # Initialize loss
@@ -450,6 +452,7 @@ def test(args, neptune_run_id: str | None) -> None:
     model = SiameseAnalogyNetwork(
         embedding_dim=test_config.embedding_dim,
         transformation_net=test_config.transformation_net,
+        encoder_name=test_config.encoder_name,
     ).to(device)
 
     # Load model from output directory if available

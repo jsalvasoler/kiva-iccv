@@ -24,6 +24,7 @@ class Config(BaseModel):
     transformation_net: bool = True
     embedding_dim: int = 512
     freeze_encoder: bool = False
+    encoder_name: Literal["resnet18", "resnet50"] = "resnet18"
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     batch_size: int = 64
@@ -84,6 +85,7 @@ def create_config_from_args(args, for_task: Literal["train", "validation", "test
         "transformation_net": args.transformation_net,
         "embedding_dim": args.embedding_dim,
         "freeze_encoder": args.freeze_encoder,
+        "encoder_name": args.encoder_name,
         "learning_rate": args.learning_rate,
         "weight_decay": args.weight_decay,
         "batch_size": args.batch_size,
@@ -164,6 +166,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--embedding_dim", type=int, default=512, help="Embedding dimension")
     parser.add_argument("--freeze_encoder", action="store_true", help="Freeze encoder parameters")
+    parser.add_argument("--encoder_name", type=str, default="resnet18", help="Encoder name")
     parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
