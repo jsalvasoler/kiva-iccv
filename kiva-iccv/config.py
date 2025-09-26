@@ -32,8 +32,11 @@ class Config(BaseModel):
     transformation_net: bool = Field(default=True, description="Use transformation network")
     embedding_dim: int = Field(default=512, description="Embedding dimension")
     freeze_encoder: bool = Field(default=False, description="Freeze encoder parameters")
-    encoder_name: Literal["resnet18", "resnet50"] = Field(
-        default="resnet18", description="Encoder name"
+    encoder_name: str = Field(
+        default="resnet18",
+        description=(
+            "Encoder name. E.g. resnet18, resnet50, vit_small_patch16_224, vit_base_patch16_224",
+        ),
     )
     learning_rate: float = Field(default=1e-3, description="Learning rate")
     weight_decay: float = Field(default=1e-4, description="Weight decay")

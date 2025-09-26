@@ -1,25 +1,38 @@
-from typing import Literal
 
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
 
 
-def get_encoder(encoder_name: Literal["resnet18", "resnet50"]) -> tuple[nn.Module, int]:
+def get_encoder(encoder_name: str) -> tuple[nn.Module, int]:
     """
     Dynamically gets a pretrained ResNet model and removes its final layer.
     Returns both the encoder and the number of input features for the projection layer.
     """
-    try:
-        model_constructor = getattr(models, encoder_name)
-    except AttributeError:
-        raise ValueError(f"Encoder name '{encoder_name}' not supported.") from None
+    model = timm.create_model(encoder_name, pretrained=True)
 
-    resnet = model_constructor(weights="IMAGENET1K_V1")
-    encoder = nn.Sequential(*list(resnet.children())[:-1])
+    if encoder_name.startswith("resnet"):
+        encoder = nn.Sequential(*list(model.children())[:-1])
+        num_features = model.fc.in_features
+        return encoder, num_features
 
-    return encoder, resnet.fc.in_features
+    if encoder_name.startswith("vit"):
+
+        class ViTEncoder(nn.Module):
+            def __init__(self, vit_model):
+                super().__init__()
+                self.vit = vit_model
+
+            def forward(self, x):
+                # forward_features returns (B, num_patches + 1, embed_dim)
+                # We extract the class token (first token) which has shape (B, embed_dim)
+                features = self.vit.forward_features(x)  # (B, 197, 384) for vit_small_patch16_224
+                return features[:, 0]  # Extract class token: (B, embed_dim)
+
+        return ViTEncoder(model), model.num_features
+
+    raise ValueError(f"Encoder name '{encoder_name}' not supported.")
 
 
 class SiameseAnalogyNetwork(nn.Module):
@@ -28,7 +41,7 @@ class SiameseAnalogyNetwork(nn.Module):
         embedding_dim: int = 512,
         freeze_encoder: bool = False,
         transformation_net: bool = False,
-        encoder_name: Literal["resnet18", "resnet50"] = "resnet18",
+        encoder_name: str = "resnet18",
     ):
         super().__init__()
         self.encoder, encoder_output_dim = get_encoder(encoder_name)
