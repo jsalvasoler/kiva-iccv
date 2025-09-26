@@ -240,18 +240,7 @@ def init_neptune(config: Config, args, experiment_type: str):
     )
 
     # Log configuration parameters
-    neptune_run["parameters"] = {
-        "loss_type": config.loss_type,
-        "margin": config.margin,
-        "embedding_dim": config.embedding_dim,
-        "transformation_net": config.transformation_net,
-        "freeze_encoder": config.freeze_encoder,
-        "learning_rate": config.learning_rate,
-        "batch_size": config.batch_size,
-        "epochs": config.epochs,
-        "num_workers": config.num_workers,
-        "use_otf": config.use_otf,
-    }
+    neptune_run["parameters"] = config.model_dump()
 
     neptune_url = neptune_run.get_url()
     print(f"🔗 Neptune logging enabled: {neptune_url}")
