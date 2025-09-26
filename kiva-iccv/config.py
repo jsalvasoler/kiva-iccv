@@ -3,40 +3,56 @@ import os
 from typing import Literal
 
 import torch
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Config(BaseModel):
     """Configuration class for hyperparameters."""
 
     # Paths will be provided by the argparser
-    data_dir: str
-    metadata_path: str
-    task: Literal["train", "validation", "test"]
-    use_otf: bool = False
+    data_dir: str = Field(description="Path to the data directory")
+    metadata_path: str = Field(description="Path to the metadata file")
+    task: Literal["train", "validation", "test"] = Field(description="Task type")
+    use_otf: bool = Field(
+        default=False,
+        description=(
+            "Whether to use on-the-fly generation. This only impacts the training dataset, "
+            "and not the validation or test datasets."
+        ),
+    )
 
     # Loss
-    loss_type: Literal["standard_triplet", "contrastive", "softmax"] = "standard_triplet"
-    margin: float = 0.5
-    temperature: float = 0.07
+    loss_type: Literal["standard_triplet", "contrastive", "softmax"] = Field(
+        default="standard_triplet", description="Loss type"
+    )
+    margin: float = Field(default=0.5, description="Margin for loss functions")
+    temperature: float = Field(default=0.07, description="Temperature for loss functions")
 
     # Model & Training
-    transformation_net: bool = True
-    embedding_dim: int = 512
-    freeze_encoder: bool = False
-    encoder_name: Literal["resnet18", "resnet50"] = "resnet18"
-    learning_rate: float = 1e-3
-    weight_decay: float = 1e-4
-    batch_size: int = 64
-    epochs: int = 5
-    num_workers: int = 8
-    device: Literal["cuda", "cpu"] = "cuda" if torch.cuda.is_available() else "cpu"
-    oft_epoch_length: int = 8192 * 2  # essentially regulates how often we evaluate
+    transformation_net: bool = Field(default=True, description="Use transformation network")
+    embedding_dim: int = Field(default=512, description="Embedding dimension")
+    freeze_encoder: bool = Field(default=False, description="Freeze encoder parameters")
+    encoder_name: Literal["resnet18", "resnet50"] = Field(
+        default="resnet18", description="Encoder name"
+    )
+    learning_rate: float = Field(default=1e-3, description="Learning rate")
+    weight_decay: float = Field(default=1e-4, description="Weight decay")
+    batch_size: int = Field(default=64, description="Batch size")
+    epochs: int = Field(default=5, description="Number of epochs")
+    num_workers: int = Field(default=8, description="Number of workers for data loading")
+    device: Literal["cuda", "cpu"] = Field(
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        description="Device to use for training",
+    )
+    oft_epoch_length: int = Field(
+        default=8192 * 2,
+        description="On-the-fly epoch length - essentially regulates how often we evaluate",
+    )
 
     # Neptune logging
-    use_neptune: bool = False
-    neptune_project: str = "jsalvasoler/kiva-iccv"
-    neptune_api_token: str = ""
+    use_neptune: bool = Field(default=False, description="Use Neptune for logging")
+    neptune_project: str = Field(default="jsalvasoler/kiva-iccv", description="Neptune project")
+    neptune_api_token: str = Field(default="", description="Neptune API token")
 
 
 def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
@@ -74,27 +90,21 @@ def create_config_from_args(args, for_task: Literal["train", "validation", "test
     }
     data_dir, metadata_path = get_dataset_paths(dataset_path[for_task])
 
-    config_dict = {
-        "task": for_task,
-        "data_dir": data_dir,
-        "metadata_path": metadata_path,
-        "use_otf": args.use_otf,
-        "loss_type": args.loss_type,
-        "margin": args.margin,
-        "temperature": args.temperature,
-        "transformation_net": args.transformation_net,
-        "embedding_dim": args.embedding_dim,
-        "freeze_encoder": args.freeze_encoder,
-        "encoder_name": args.encoder_name,
-        "learning_rate": args.learning_rate,
-        "weight_decay": args.weight_decay,
-        "batch_size": args.batch_size,
-        "epochs": args.epochs,
-        "num_workers": args.num_workers,
-        "use_neptune": args.use_neptune,
-        "neptune_project": args.neptune_project or os.getenv("NEPTUNE_PROJECT", ""),
-        "neptune_api_token": args.neptune_api_token or os.getenv("NEPTUNE_API_TOKEN", ""),
-    }
+    # Convert args to dict and add programmatically set fields
+    config_dict = vars(args).copy()
+    config_dict.update(
+        {
+            "task": for_task,
+            "data_dir": data_dir,
+            "metadata_path": metadata_path,
+        }
+    )
+
+    # Handle special cases for environment variables
+    if not config_dict.get("neptune_project"):
+        config_dict["neptune_project"] = os.getenv("NEPTUNE_PROJECT", "")
+    if not config_dict.get("neptune_api_token"):
+        config_dict["neptune_api_token"] = os.getenv("NEPTUNE_API_TOKEN", "")
 
     # Convert to Config object
     return Config(**config_dict)
@@ -102,13 +112,33 @@ def create_config_from_args(args, for_task: Literal["train", "validation", "test
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
+
+    class CustomFormatter(
+        argparse.ArgumentDefaultsHelpFormatter, argparse.MetavarTypeHelpFormatter
+    ):
+        """Show argument defaults and use type names as metavar."""
+
+        pass
+
     parser = argparse.ArgumentParser(
-        description="Train and evaluate a Siamese Network for Visual Analogies."
+        description="Train and evaluate a Siamese Network for Visual Analogies.",
+        formatter_class=CustomFormatter,
     )
 
-    parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
+    # Non-config arguments
+    parser.add_argument(
+        "--do_train",
+        action="store_true",
+        help="Whether to run training on train_on with validation on validate_on.",
+    )
     parser.add_argument(
         "--do_test", action="store_true", help="Whether to run testing on the test set."
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default="",
+        help="Resume training from checkpoint. Provide Neptune run ID or output directory path.",
     )
     parser.add_argument(
         "--output_dir",
@@ -116,15 +146,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="",
         help="Output directory for model and predictions. Must be specified if only testing.",
     )
-    # use otf for on-the-fly generation
-    parser.add_argument(
-        "--use_otf",
-        action="store_true",
-        help=(
-            "Whether to use on-the-fly generation. This only impacts the training dataset, "
-            "and not the validation or test datasets."
-        ),
-    )
+
     # Dataset arguments: unit, train, validation, test
     dataset_options = ["unit", "train", "validation", "test"]
     parser.add_argument(
@@ -149,34 +171,36 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Dataset keyword for testing.",
     )
 
-    # Config override arguments
-    parser.add_argument(
-        "--loss_type",
-        type=str,
-        default="contrastive",
-        choices=["standard_triplet", "contrastive", "softmax"],
-        help="Loss type",
-    )
-    parser.add_argument("--margin", type=float, default=0.5, help="Margin for loss functions")
-    parser.add_argument(
-        "--temperature", type=float, default=0.07, help="Temperature for loss functions"
-    )
-    parser.add_argument(
-        "--transformation_net", action="store_true", help="Use transformation network"
-    )
-    parser.add_argument("--embedding_dim", type=int, default=512, help="Embedding dimension")
-    parser.add_argument("--freeze_encoder", action="store_true", help="Freeze encoder parameters")
-    parser.add_argument("--encoder_name", type=str, default="resnet18", help="Encoder name")
-    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
-    parser.add_argument("--epochs", type=int, default=5, help="Number of epochs")
-    parser.add_argument(
-        "--num_workers", type=int, default=4, help="Number of workers for data loading"
-    )
+    # Add arguments from Config model fields
+    for field_name, field_info in Config.model_fields.items():
+        if field_name in {"data_dir", "metadata_path", "task"}:
+            continue
 
-    parser.add_argument("--use_neptune", action="store_true", help="Use Neptune for logging")
-    parser.add_argument("--neptune_project", type=str, default="", help="Neptune project")
-    parser.add_argument("--neptune_api_token", type=str, default="", help="Neptune API token")
+        # Get field type, default, and description
+        field_type = field_info.annotation
+        default_value = field_info.default
+        description = field_info.description or f"{field_name.replace('_', ' ').title()}"
+
+        # Handle Literal types for choices
+        choices = None
+        if hasattr(field_type, "__origin__") and field_type.__origin__ is Literal:
+            choices = list(field_type.__args__)
+            # Use the first choice as the type for argparse
+            field_type = type(choices[0])
+
+        # Handle boolean fields with action="store_true"
+        if field_type is bool:
+            parser.add_argument(
+                f"--{field_name}", action="store_true", default=default_value, help=description
+            )
+        else:
+            # For other types, use the field type and default
+            parser.add_argument(
+                f"--{field_name}",
+                type=field_type,
+                default=default_value,
+                choices=choices,
+                help=description,
+            )
 
     return parser

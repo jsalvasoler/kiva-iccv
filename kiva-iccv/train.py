@@ -29,20 +29,111 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-def setup_output_directory_for_training(args, neptune_run) -> str:
-    """Setup output directory structure for Neptune runs.
+def extract_neptune_run_id(resume_arg: str) -> str | None:
+    """Extract Neptune run ID from resume argument.
+
+    Args:
+        resume_arg: Either a Neptune run ID (e.g., 'CLS-123') or output directory path
 
     Returns:
-        str: model_save_path
+        Neptune run ID if found, None otherwise
     """
+    if not resume_arg:
+        return None
 
-    if args.output_dir:
+    # If it looks like a Neptune run ID (format: ABC-123)
+    if len(resume_arg.split("-")) == 2 and resume_arg.replace("-", "").replace("_", "").isalnum():
+        return resume_arg
+
+    # If it's a path, try to extract run ID from directory name
+    if os.path.isdir(resume_arg):
+        # Extract from ./output/CLS-123 format
+        dir_name = os.path.basename(resume_arg.rstrip("/"))
+        if len(dir_name.split("-")) == 2 and dir_name.replace("-", "").replace("_", "").isalnum():
+            return dir_name
+
+    return None
+
+
+def load_checkpoint(
+    checkpoint_path: str,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+) -> tuple[int, float, float, float]:
+    """Load checkpoint and restore training state.
+
+    Args:
+        checkpoint_path: Path to checkpoint file
+        model: Model to load state into
+        optimizer: Optimizer to load state into
+        scheduler: Scheduler to load state into
+
+    Returns:
+        Tuple of (start_epoch, best_accuracy, train_accuracy, train_loss)
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    print(f"🔄 Loading checkpoint from: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    # Load model state
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    # Load optimizer state
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    # Load scheduler state
+    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    # Restore random states for reproducibility
+    torch.set_rng_state(checkpoint["random_state"])
+    if torch.cuda.is_available() and "cuda_random_state" in checkpoint:
+        torch.cuda.set_rng_state(checkpoint["cuda_random_state"])
+
+    start_epoch = checkpoint["epoch"]
+    best_accuracy = checkpoint["best_accuracy"]
+    train_accuracy = checkpoint.get("train_accuracy", 0.0)
+    train_loss = checkpoint.get("train_loss", 0.0)
+
+    print("✅ Checkpoint loaded successfully!")
+    print(f"   Resuming from epoch: {start_epoch}")
+    print(f"   Best accuracy so far: {best_accuracy:.2f}%")
+
+    return start_epoch, best_accuracy, train_accuracy, train_loss
+
+
+def load_model_from_checkpoint(checkpoint_path: str, model: torch.nn.Module) -> None:
+    """Load only model weights from checkpoint (for testing).
+
+    Args:
+        checkpoint_path: Path to checkpoint file
+        model: Model to load state into
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    print(f"🔄 Loading model from checkpoint: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    print("✅ Model loaded from checkpoint")
+
+
+def setup_output_directory_for_training(args, neptune_run) -> None:
+    """Setup output directory structure for Neptune runs."""
+
+    # Allow output_dir when resuming training
+    if args.output_dir and not args.resume:
         raise ValueError(
-            "Cannot specify --output_dir when using --do_train. "
+            "Cannot specify --output_dir when using --do_train (unless resuming). "
             "Output directory is automatically managed during training."
         )
 
-    if not neptune_run:
+    # Use provided output_dir when resuming, otherwise create new one
+    if args.resume and args.output_dir:
+        output_dir = args.output_dir
+    elif not neptune_run:
         output_dir = tempfile.mkdtemp()
     else:
         # Get Neptune run ID
@@ -57,11 +148,7 @@ def setup_output_directory_for_training(args, neptune_run) -> str:
     # Create models subdirectory
     os.makedirs(f"{output_dir}/models", exist_ok=True)
 
-    # Set model save path
-    model_save_path = f"{output_dir}/models/best_model.pth"
-
     print(f"📁 Output directory created: {output_dir}")
-    return model_save_path
 
 
 def print_experiment_results(
@@ -231,13 +318,32 @@ def init_neptune(config: Config, args, experiment_type: str):
             "flag or set the NEPTUNE_API_TOKEN environment variable."
         )
 
-    neptune_run = neptune.init_run(
-        project=config.neptune_project,
-        api_token=config.neptune_api_token,
-        name=f"kiva-iccv-{experiment_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        tags=[tag for tag, flag in (("train", args.do_train), ("test", args.do_test)) if flag]
-        + [config.encoder_name, config.loss_type],
-    )
+    # Resume existing Neptune run if specified
+    if args.resume and experiment_type == "train":
+        # Try to extract Neptune run ID from resume argument
+        resume_id = extract_neptune_run_id(args.resume)
+        if resume_id:
+            try:
+                neptune_run = neptune.init_run(
+                    project=config.neptune_project,
+                    api_token=config.neptune_api_token,
+                    with_id=resume_id,
+                )
+                print(f"🔄 Resuming Neptune run: {resume_id}")
+            except Exception as e:
+                print(f"⚠️  Could not resume Neptune run {resume_id}: {e}")
+                print("Creating new Neptune run instead...")
+                neptune_run = None
+
+    # Create new Neptune run if not resuming or resume failed
+    if not neptune_run:
+        neptune_run = neptune.init_run(
+            project=config.neptune_project,
+            api_token=config.neptune_api_token,
+            name=f"kiva-iccv-{experiment_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            tags=[tag for tag, flag in (("train", args.do_train), ("test", args.do_test)) if flag]
+            + [config.encoder_name, config.loss_type],
+        )
 
     # Log configuration parameters
     neptune_run["parameters"] = config.model_dump()
@@ -278,7 +384,7 @@ def train(args) -> str | None:
     neptune_run = init_neptune(train_config, args, "train")
 
     # Setup output directory if Neptune is working
-    model_save_path = setup_output_directory_for_training(args, neptune_run)
+    setup_output_directory_for_training(args, neptune_run)
 
     # Initialize model
     model = SiameseAnalogyNetwork(
@@ -322,13 +428,42 @@ def train(args) -> str | None:
     print(f"Number of parameters: {total_params}")
     print(f"Number of trainable parameters: {trainable_params}")
     best_accuracy = 0.0
+    start_epoch = 0
+
+    # Handle resume training
+    if args.resume:
+        # Determine output directory for resume
+        if not args.output_dir:
+            # Try to infer from resume argument
+            if os.path.isdir(args.resume):
+                args.output_dir = args.resume
+            else:
+                # Assume it's a Neptune run ID
+                args.output_dir = f"./output/{args.resume}"
+
+        # Load checkpoint if it exists (prefer last, fallback to best)
+        checkpoint_last_path = f"{args.output_dir}/models/checkpoint_last.pth"
+        checkpoint_best_path = f"{args.output_dir}/models/checkpoint_best.pth"
+
+        if os.path.exists(checkpoint_last_path):
+            start_epoch, best_accuracy, _, _ = load_checkpoint(
+                checkpoint_last_path, model, optimizer, scheduler
+            )
+            print("🔄 Resuming from last checkpoint")
+        elif os.path.exists(checkpoint_best_path):
+            start_epoch, best_accuracy, _, _ = load_checkpoint(
+                checkpoint_best_path, model, optimizer, scheduler
+            )
+            print("🔄 Resuming from best checkpoint (no last checkpoint found)")
+        else:
+            print(f"⚠️  No checkpoints found in {args.output_dir}/models/, starting from scratch")
 
     if train_config.epochs == 0:
         print("Skipping training since epochs is 0.")
         return None
 
     # 3. Training Loop
-    for epoch in range(train_config.epochs):
+    for epoch in range(start_epoch, train_config.epochs):
         model.train()
         running_loss = 0.0
         train_correct = 0
@@ -389,10 +524,33 @@ def train(args) -> str | None:
             neptune_run["training/val_accuracy"].append(val_accuracy)
             neptune_run["training/learning_rate"].append(scheduler.get_last_lr()[0])
 
-        # --- 💾 Save the best model (only if Neptune is working) ---
+        # --- 💾 Save checkpoints ---
+        # Always save last checkpoint for resuming
+        checkpoint_last_path = f"{args.output_dir}/models/checkpoint_last.pth"
+        checkpoint = {
+            "epoch": epoch + 1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_accuracy": best_accuracy,
+            "train_accuracy": train_accuracy,
+            "train_loss": avg_train_loss,
+            "val_accuracy": val_accuracy,
+            "config": train_config.model_dump(),
+            "random_state": torch.get_rng_state(),
+        }
+        if torch.cuda.is_available():
+            checkpoint["cuda_random_state"] = torch.cuda.get_rng_state()
+
+        torch.save(checkpoint, checkpoint_last_path)
+
+        # Save best checkpoint when validation improves
         if val_accuracy > best_accuracy:
             best_accuracy = val_accuracy
-            torch.save(model.state_dict(), model_save_path)
+            checkpoint_best_path = f"{args.output_dir}/models/checkpoint_best.pth"
+            # Update best accuracy in checkpoint before saving
+            checkpoint["best_accuracy"] = best_accuracy
+            torch.save(checkpoint, checkpoint_best_path)
             print(f"✨ New best model saved with accuracy: {best_accuracy:.2f}%")
 
     print("🏁 Training finished.")
@@ -403,7 +561,7 @@ def train(args) -> str | None:
         neptune_run["training/final_train_accuracy"] = train_accuracy
         neptune_run["training/best_val_accuracy"] = best_accuracy
         neptune_run["training/total_parameters"] = sum(p.numel() for p in model.parameters())
-        neptune_run["training/model_save_path"] = model_save_path
+        neptune_run["training/checkpoint_dir"] = f"{args.output_dir}/models/"
         neptune_run_id = neptune_run["sys/id"].fetch()
         neptune_run.stop()
         print("🔗 Neptune run completed and stopped")
@@ -444,20 +602,34 @@ def test(args, neptune_run_id: str | None) -> None:
         encoder_name=test_config.encoder_name,
     ).to(device)
 
-    # Load model from output directory if available
+    # Load model from checkpoint in output directory
     output_dir = args.output_dir
-    model_path = f"{output_dir}/models/best_model.pth"
-    if output_dir:
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model not found in output directory: {model_path}")
-    else:
+    if not output_dir:
         raise ValueError(
             "No output directory available. "
             "If only testing, please specify an output directory with the --output_dir flag. "
             "If also training, this is automatically managed."
         )
 
-    model.load_state_dict(torch.load(model_path))
+    # Try to load from best checkpoint first, then last checkpoint
+    checkpoint_best_path = f"{output_dir}/models/checkpoint_best.pth"
+    checkpoint_last_path = f"{output_dir}/models/checkpoint_last.pth"
+
+    checkpoint_path = None
+    if os.path.exists(checkpoint_best_path):
+        checkpoint_path = checkpoint_best_path
+        print(f"🔄 Loading best checkpoint for testing: {checkpoint_path}")
+    elif os.path.exists(checkpoint_last_path):
+        checkpoint_path = checkpoint_last_path
+        print(f"🔄 Loading last checkpoint for testing: {checkpoint_path}")
+    else:
+        raise FileNotFoundError(
+            f"No checkpoints found in {output_dir}/models/. "
+            f"Expected checkpoint_best.pth or checkpoint_last.pth"
+        )
+
+    # Load only the model state from checkpoint
+    load_model_from_checkpoint(checkpoint_path, model)
 
     # 2. Setup the test dataloader
     test_dataset = dataset_factory(args, test_config)
