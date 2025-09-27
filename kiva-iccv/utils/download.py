@@ -4,37 +4,61 @@ import shutil
 import zipfile
 
 import requests
-from helper import get_content_path, setup_kiva_data_set
 
 
-def download_data(data_path: str):
-    # Initial Setup: fill in specifications ---
-
+def download_data(data_path: str) -> None:
     # Create necessary directories
     os.makedirs(data_path, exist_ok=True)  # main data directory
 
-    # Load helper.py
-    print("Setting up helper.py...")
+    # Download and extract train, validation, and test datasets
+    datasets = ["train", "validation", "test"]
 
-    content_path = get_content_path()
-    os.makedirs(os.path.join(content_path, "output"), exist_ok=True)  # helper directory
+    for dataset in datasets:
+        print(f"Downloading {dataset} data...")
 
-    # Set up Training Data
-    train_trials, train_stimuli = setup_kiva_data_set("train", data_path)
+        # Download zip file
+        zip_url = f"https://storage.googleapis.com/kiva-challenge-bucket/{dataset}.zip"
+        zip_path = os.path.join(data_path, f"{dataset}.zip")
 
-    # Set up Validation Data
-    val_trials, val_stimuli = setup_kiva_data_set("validation", data_path)
+        response = requests.get(zip_url, stream=True)
+        response.raise_for_status()
+        with open(zip_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
 
-    # remove content_path / output
-    shutil.rmtree(os.path.join(content_path, "output"))
+        # Extract zip file
+        print(f"Extracting {dataset} data...")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(data_path)
 
-    # create a unit dataset, which contains 16 samples from the train set
+        # Remove zip file and __MACOSX directory if it exists
+        os.remove(zip_path)
+        macosx_dir = os.path.join(data_path, "__MACOSX")
+        if os.path.exists(macosx_dir):
+            shutil.rmtree(macosx_dir)
 
-    # 1. open the train.json file
+        # Download JSON metadata for train and validation (not for test)
+        if dataset != "test":
+            print(f"Downloading {dataset} metadata...")
+            json_url = f"https://storage.googleapis.com/kiva-key-bucket/{dataset}.json"
+            json_path = os.path.join(data_path, f"{dataset}.json")
+
+            response = requests.get(json_url, stream=True)
+            response.raise_for_status()
+            with open(json_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+    # Create a unit dataset, which contains 16 samples from the train set
+    print("Creating unit dataset...")
+
+    # 1. Open the train.json file
     with open(os.path.join(data_path, "train.json")) as f:
         train_data = json.load(f)
 
-    # 2. take first 16 trial IDs and their data, and save them to a new json file
+    # 2. Take first 16 trial IDs and their data, and save them to a new json file
     first_16_trial_ids = list(train_data.keys())[:16]
     unit_trials_dict = {trial_id: train_data[trial_id] for trial_id in first_16_trial_ids}
 
@@ -44,51 +68,16 @@ def download_data(data_path: str):
     with open(os.path.join(data_path, "unit.json"), "w") as f:
         json.dump(unit_trials_dict, f, indent=2)
 
-    # 3. copy the first 16 images from the train set to the unit set
+    # 3. Copy the first 16 images from the train set to the unit set
     for trial_id in first_16_trial_ids:
         src_img = os.path.join(data_path, "train", f"{trial_id}.jpg")
         dst_img = os.path.join(data_path, "unit", f"{trial_id}.jpg")
         shutil.copy(src_img, dst_img)
 
-    print(f"\n--- Setting up unit data within {data_path} ---")
     print(f"Copied {len(first_16_trial_ids)} images to create the unit dataset")
-
-    # 4. remove the content_path directory
-    shutil.rmtree(content_path)
-    print("\n--- KiVA Data Setup Complete! ---")
-
-
-def download_test_data():
-    # URL and target paths
-    url = "https://storage.googleapis.com/kiva-challenge-bucket/test.zip"
-    target_dir = "./data"
-    os.makedirs(target_dir, exist_ok=True)
-    zip_path = os.path.join(target_dir, "test.zip")
-
-    # Download the zip file
-    print("Downloading test data...")
-    response = requests.get(url, stream=True)
-    with open(zip_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-    print("Download complete.")
-
-    # Unzip the contents
-    print("Unzipping test data...")
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(target_dir)
-    print("Unzipping complete.")
-
-    # (Optional) remove the zip file after extraction and the __MACOSX directory
-    macosx_dir = os.path.join(target_dir, "__MACOSX")
-    if os.path.exists(macosx_dir):
-        shutil.rmtree(macosx_dir)
-    os.remove(zip_path)
-    print("Done! Test data is in:", target_dir)
+    print("--- KiVA Data Setup Complete! ---")
 
 
 if __name__ == "__main__":
     data_path = "./data/"  # all KiVA data (images and annotations) will be placed here
     download_data(data_path)
-    download_test_data()

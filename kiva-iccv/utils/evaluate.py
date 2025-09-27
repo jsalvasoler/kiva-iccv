@@ -71,10 +71,10 @@ def calc_top1(answers_list: list[dict[str, str]], db_dict: dict[str, Any]) -> fl
     answers_by_id = {item["id"]: item["answer"] for item in answers_list}
 
     for trial_id, ground_truth_info in db_dict.items():
-        if trial_id in answers_by_id:
-            total_count += 1
-            if answers_by_id[trial_id] == ground_truth_info["correct"]:
-                correct_count += 1
+        assert trial_id in answers_by_id, f"Trial ID {trial_id} not found in answers_by_id"
+        total_count += 1
+        if answers_by_id[trial_id] == ground_truth_info["correct"]:
+            correct_count += 1
 
     return correct_count / total_count if total_count > 0 else 0.0
 
@@ -168,6 +168,61 @@ def evaluate_submission(
         "cat_accuracies": cat_accuracies,
         "sample_counts": sample_counts,
     }
+
+
+def print_formatted_evaluation_results(
+    cat_accuracies: dict[str, float], sample_counts: dict[str, int], phase: str = "Validation Phase"
+) -> None:
+    """
+    Print evaluation results in the specified format with question counts and scores.
+
+    Args:
+        cat_accuracies: Dictionary with category-specific accuracy scores
+        sample_counts: Dictionary with sample counts for each category
+        phase: Phase name for the evaluation (e.g., "Validation Phase")
+    """
+    if not cat_accuracies or not sample_counts:
+        print("No results available to print.")
+        return
+
+    # Get total questions and correct answers
+    total_questions = sample_counts.get("kiva-overall", 0)
+    overall_accuracy = cat_accuracies.get("kiva-overall", 0.0)
+    correct_answers = int(total_questions * overall_accuracy)
+
+    # Print summary line
+    print(
+        f"Evaluated {total_questions} questions across {total_questions} images. "
+        f"Score is {correct_answers} out of {total_questions}."
+    )
+
+    # Print overall scores
+    print(f"kiva-overall: {cat_accuracies.get('kiva-overall', 0.0):.2f}")
+    print(f"kiva-functions_overall: {cat_accuracies.get('kiva-functions_overall', 0.0):.2f}")
+    print(
+        f"kiva-functions-compositionality_overall: "
+        f"{cat_accuracies.get('kiva-functions-compositionality_overall', 0.0):.2f}"
+    )
+    print(f"kiva_overall: {cat_accuracies.get('kiva_overall', 0.0):.2f}")
+
+    # Print KiVA transformation scores
+    for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
+        key = f"kiva_{trans_name}"
+        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+
+    # Print KiVA-functions transformation scores
+    for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
+        key = f"kiva-functions_{trans_name}"
+        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+
+    # Print KiVA-functions-compositionality transformation scores
+    for trans_name in TRANSFORMATIONS_FOR_COMPOSITE_GROUP:
+        key = f"kiva-functions-compositionality_{trans_name}"
+        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+
+    # Print phase information
+    print(f"Evaluating for {phase}")
+    print(f"Completed evaluation for {phase}")
 
 
 def print_results_by_category(cat_accuracies: dict[str, float]) -> None:
@@ -602,11 +657,14 @@ def main(
 
     cat_accuracies = results["cat_accuracies"]
 
+    # Print formatted results
+    sample_counts = results["sample_counts"]
+    print_formatted_evaluation_results(cat_accuracies, sample_counts, "Validation Phase")
+
     # Print detailed results
     print_results_by_category(cat_accuracies)
 
     # Generate visualizations
-    sample_counts = results["sample_counts"]
     generate_combined_radar_plot(cat_accuracies, plots_dir, sample_counts)
     generate_combined_bar_plot(cat_accuracies, plots_dir, sample_counts)
 
@@ -648,6 +706,10 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     results = evaluate_submission(submission_data, ground_truth_data)
     category_accuracies = results["cat_accuracies"]
 
+    # Print formatted results
+    sample_counts = results["sample_counts"]
+    print_formatted_evaluation_results(category_accuracies, sample_counts, "Validation Phase")
+
     # Print detailed results
     print_results_by_category(category_accuracies)
 
@@ -656,7 +718,6 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     os.makedirs(plots_dir, exist_ok=True)
 
     # Generate visualizations
-    sample_counts = results["sample_counts"]
     generate_combined_radar_plot(category_accuracies, plots_dir, sample_counts)
     generate_combined_bar_plot(category_accuracies, plots_dir, sample_counts)
 

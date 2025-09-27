@@ -44,8 +44,6 @@ uv run python kiva-iccv/utils/download.py
 
 This will create the `data/` directory with the following structure:
 
-**Note:** The `test` directory is not available yet. Will be released on September 1.
-
 ```
 data/
 ├── train/
@@ -54,9 +52,10 @@ data/
 ├── unit/
 ├── train.json
 ├── validation.json
-├── test.json
 └── unit.json
 ```
+
+**Note:** The `test` dataset has no metadata since the labels have not been released yet.
 
 2. Run the following commands to create the subimages that will be used by the model.
 ```bash
@@ -92,8 +91,7 @@ data/
 ├── split_test/           # Split test images
 |   └── ...
 ├── train.json            # Training metadata
-├── validation.json       # Validation metadata
-└── test.json            # Test metadata
+└── validation.json       # Validation metadata
 ```
 
 ### Untransformed images for the on-the-fly dataset
