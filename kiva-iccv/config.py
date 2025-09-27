@@ -83,6 +83,18 @@ def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
     return data_dir, metadata_path
 
 
+def create_config_from_saved_config_for_test(
+    saved_config: dict, test_on: Literal["train", "validation", "test"]
+) -> Config:
+    """Create a Config object from a saved config."""
+    data_dir, metadata_path = get_dataset_paths(test_on)
+    config_dict = saved_config.copy()
+    config_dict["data_dir"] = data_dir
+    config_dict["metadata_path"] = metadata_path
+    config_dict["task"] = "test"
+    return Config(**config_dict)
+
+
 def create_config_from_args(args, for_task: Literal["train", "validation", "test"]) -> Config:
     """Create a Config object from parsed arguments, overriding defaults."""
 

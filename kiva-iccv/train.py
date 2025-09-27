@@ -1,13 +1,19 @@
 import json
 import os
 import tempfile
+import warnings
 from datetime import datetime
 
 import neptune
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from config import Config, create_argument_parser, create_config_from_args
+from config import (
+    Config,
+    create_argument_parser,
+    create_config_from_args,
+    create_config_from_saved_config_for_test,
+)
 from dataset import VisualAnalogyDataset
 from loss import (
     ContrastiveAnalogyLoss,
@@ -120,7 +126,7 @@ def load_model_from_checkpoint(checkpoint_path: str, model: torch.nn.Module) -> 
     print("✅ Model loaded from checkpoint")
 
 
-def setup_output_directory_for_training(args, neptune_run) -> None:
+def setup_output_directory_for_training(args, train_config, neptune_run) -> None:
     """Setup output directory structure for Neptune runs."""
 
     # Allow output_dir when resuming training
@@ -147,6 +153,10 @@ def setup_output_directory_for_training(args, neptune_run) -> None:
 
     # Create models subdirectory
     os.makedirs(f"{output_dir}/models", exist_ok=True)
+
+    # Save config to output directory
+    with open(f"{output_dir}/config.json", "w") as f:
+        json.dump(train_config.model_dump(), f, indent=4)
 
     print(f"📁 Output directory created: {output_dir}")
 
@@ -380,11 +390,11 @@ def train(args) -> str | None:
         num_workers=val_config.num_workers,
     )
 
-    # 2. Initialize Neptune logging
+    # Initialize Neptune logging
     neptune_run = init_neptune(train_config, args, "train")
 
     # Setup output directory if Neptune is working
-    setup_output_directory_for_training(args, neptune_run)
+    setup_output_directory_for_training(args, train_config, neptune_run)
 
     # Initialize model
     model = SiameseAnalogyNetwork(
@@ -462,7 +472,7 @@ def train(args) -> str | None:
         print("Skipping training since epochs is 0.")
         return None
 
-    # 3. Training Loop
+    # Training Loop
     for epoch in range(start_epoch, train_config.epochs):
         model.train()
         running_loss = 0.0
@@ -586,7 +596,33 @@ def train(args) -> str | None:
 def test(args, neptune_run_id: str | None) -> None:
     """Testing function that evaluates the trained model."""
     print(f"\n🧪 Starting testing on '{args.test_on}' dataset...")
-    test_config = create_config_from_args(args, for_task="test")
+
+    with open(f"{args.output_dir}/config.json") as f:
+        saved_config = json.load(f)
+
+    # the true config to use is the saved one
+    test_config = create_config_from_saved_config_for_test(saved_config, test_on=args.test_on)
+    # the provided config (through args) compared against the saved config, warning if they differ
+    provided_test_config_mdump = create_config_from_args(args, for_task="test").model_dump()
+    skip_fields = [
+        "neptune_url",
+        "neptune_project",
+        "neptune_api_token",
+        "device",
+        "data_dir",
+        "metadata_path",
+        "task",
+    ]
+    for field, value in test_config.model_dump().items():
+        if field in skip_fields:
+            continue
+        if value != provided_test_config_mdump[field]:
+            warnings.warn(
+                f"Config mismatch for {field}: {value} != {provided_test_config_mdump[field]}. "
+                f"Using the setting from the saved config, which matches the model checkpoint: "
+                f"{field}={value}",
+                stacklevel=2,
+            )
 
     # Initialize Neptune logging
     if neptune_run_id is None:
@@ -595,7 +631,7 @@ def test(args, neptune_run_id: str | None) -> None:
         # continue the existing Neptune run
         neptune_run = neptune.init_run(with_id=neptune_run_id)
 
-    # 1. Initialize a fresh model instance and load the best saved weights
+    # Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(
         embedding_dim=test_config.embedding_dim,
         transformation_net=test_config.transformation_net,
@@ -630,8 +666,28 @@ def test(args, neptune_run_id: str | None) -> None:
 
     # Load only the model state from checkpoint
     load_model_from_checkpoint(checkpoint_path, model)
+    # check that the saved config is the same as the test config
+    with open(f"{output_dir}/config.json") as f:
+        saved_config = json.load(f)
+        current_config = test_config.model_dump()
+        skip_fields = [
+            "neptune_url",
+            "neptune_project",
+            "neptune_api_token",
+            "device",
+            "data_dir",
+            "metadata_path",
+            "task",
+        ]
+        for field, value in saved_config.items():
+            if field in skip_fields:
+                continue
+            if value != current_config[field]:
+                raise ValueError(
+                    f"Config mismatch for field {field}: {value} != {current_config[field]}"
+                )
 
-    # 2. Setup the test dataloader
+    # Setup the test dataloader
     test_dataset = dataset_factory(args, test_config)
     test_loader = DataLoader(
         test_dataset,
@@ -640,13 +696,13 @@ def test(args, neptune_run_id: str | None) -> None:
         num_workers=test_config.num_workers,
     )
 
-    # 3. Run final evaluation and generate submission file
+    # Run final evaluation and generate submission file
     test_accuracy = evaluate(
         model, test_loader, device, save_predictions=neptune_run is not None, dataset=test_dataset
     )
     print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
 
-    # 4. Run evaluation analysis if submission file was generated
+    # Run evaluation analysis if submission file was generated
     if neptune_run is not None:
         run_evaluation_analysis(args, args.test_on)
 
