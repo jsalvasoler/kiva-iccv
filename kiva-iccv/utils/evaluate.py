@@ -13,7 +13,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from config import create_config_from_args
+from config import Config
 from utils.helper import (
     LEVEL_KIVA_DB_KEY,
     LEVEL_KIVA_FUNCTIONS_COMPOSITIONALITY_DB_KEY,
@@ -634,7 +634,7 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     print("\n🔍 Running evaluation analysis...")
 
     # Determine data type based on test dataset name
-    config = create_config_from_args(args, for_task="test")
+    config = Config.from_args(args, for_task="test")
 
     # Load submission data
     with open(submission_path) as f:

@@ -11,8 +11,6 @@ import torch.optim as optim
 from config import (
     Config,
     create_argument_parser,
-    create_config_from_args,
-    create_config_from_saved_config_for_test,
 )
 from dataset import VisualAnalogyDataset
 from loss import (
@@ -368,7 +366,7 @@ def init_neptune(config: Config, args, experiment_type: str):
 def train(args) -> str | None:
     """Training function that handles the complete training loop."""
     # 1. Setup train and validation dataloaders
-    train_config = create_config_from_args(args, for_task="train")
+    train_config = Config.from_args(args, for_task="train")
     train_dataset = dataset_factory(args, train_config)
     train_loader = DataLoader(
         train_dataset,
@@ -377,7 +375,7 @@ def train(args) -> str | None:
         num_workers=train_config.num_workers,
     )
 
-    val_config = create_config_from_args(args, for_task="validation")
+    val_config = Config.from_args(args, for_task="validation")
     val_dataset = dataset_factory(args, val_config)
 
     if args.validate_on == "validation_sample":
@@ -400,7 +398,6 @@ def train(args) -> str | None:
     model = SiameseAnalogyNetwork(
         embedding_dim=train_config.embedding_dim,
         freeze_encoder=train_config.freeze_encoder,
-        transformation_net=train_config.transformation_net,
         encoder_name=train_config.encoder_name,
     ).to(device)
 
@@ -415,13 +412,7 @@ def train(args) -> str | None:
     optimizer = optim.AdamW(
         [
             {"params": model.encoder.parameters(), "lr": train_config.learning_rate * 0.1},
-            {
-                "params": list(model.projection.parameters())
-                + list(model.transformation_net.parameters())
-                if model.transformation_net
-                else [],
-                "lr": train_config.learning_rate,
-            },
+            {"params": model.projection.parameters(), "lr": train_config.learning_rate},
         ],
         weight_decay=train_config.weight_decay,
     )
@@ -601,9 +592,9 @@ def test(args, neptune_run_id: str | None) -> None:
         saved_config = json.load(f)
 
     # the true config to use is the saved one
-    test_config = create_config_from_saved_config_for_test(saved_config, test_on=args.test_on)
+    test_config = Config.from_saved_config_for_test(saved_config, test_on=args.test_on)
     # the provided config (through args) compared against the saved config, warning if they differ
-    provided_test_config_mdump = create_config_from_args(args, for_task="test").model_dump()
+    provided_test_config_mdump = Config.from_args(args, for_task="test").model_dump()
     skip_fields = [
         "neptune_url",
         "neptune_project",
@@ -634,7 +625,6 @@ def test(args, neptune_run_id: str | None) -> None:
     # Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(
         embedding_dim=test_config.embedding_dim,
-        transformation_net=test_config.transformation_net,
         encoder_name=test_config.encoder_name,
     ).to(device)
 

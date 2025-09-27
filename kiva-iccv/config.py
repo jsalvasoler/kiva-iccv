@@ -29,7 +29,6 @@ class Config(BaseModel):
     temperature: float = Field(default=0.07, description="Temperature for loss functions")
 
     # Model & Training
-    transformation_net: bool = Field(default=True, description="Use transformation network")
     embedding_dim: int = Field(default=512, description="Embedding dimension")
     freeze_encoder: bool = Field(default=False, description="Freeze encoder parameters")
     encoder_name: str = Field(
@@ -57,6 +56,48 @@ class Config(BaseModel):
     neptune_project: str = Field(default="jsalvasoler/kiva-iccv", description="Neptune project")
     neptune_api_token: str = Field(default="", description="Neptune API token")
 
+    @classmethod
+    def from_saved_config_for_test(
+        cls, saved_config: dict, test_on: Literal["train", "validation", "test"]
+    ) -> "Config":
+        """Create a Config object from a saved config."""
+        data_dir, metadata_path = get_dataset_paths(test_on)
+        config_dict = saved_config.copy()
+        config_dict["data_dir"] = data_dir
+        config_dict["metadata_path"] = metadata_path
+        config_dict["task"] = "test"
+        return cls(**config_dict)
+
+    @classmethod
+    def from_args(cls, args, for_task: Literal["train", "validation", "test"]) -> "Config":
+        """Create a Config object from parsed arguments, overriding defaults."""
+
+        dataset_path = {
+            "train": args.train_on,
+            "validation": args.validate_on,
+            "test": args.test_on,
+        }
+        data_dir, metadata_path = get_dataset_paths(dataset_path[for_task])
+
+        # Convert args to dict and add programmatically set fields
+        config_dict = vars(args).copy()
+        config_dict.update(
+            {
+                "task": for_task,
+                "data_dir": data_dir,
+                "metadata_path": metadata_path,
+            }
+        )
+
+        # Handle special cases for environment variables
+        if not config_dict.get("neptune_project"):
+            config_dict["neptune_project"] = os.getenv("NEPTUNE_PROJECT", "")
+        if not config_dict.get("neptune_api_token"):
+            config_dict["neptune_api_token"] = os.getenv("NEPTUNE_API_TOKEN", "")
+
+        # Convert to Config object
+        return cls(**config_dict)
+
 
 def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
     """Returns the data directory and metadata path based on a keyword."""
@@ -81,48 +122,6 @@ def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
         raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
 
     return data_dir, metadata_path
-
-
-def create_config_from_saved_config_for_test(
-    saved_config: dict, test_on: Literal["train", "validation", "test"]
-) -> Config:
-    """Create a Config object from a saved config."""
-    data_dir, metadata_path = get_dataset_paths(test_on)
-    config_dict = saved_config.copy()
-    config_dict["data_dir"] = data_dir
-    config_dict["metadata_path"] = metadata_path
-    config_dict["task"] = "test"
-    return Config(**config_dict)
-
-
-def create_config_from_args(args, for_task: Literal["train", "validation", "test"]) -> Config:
-    """Create a Config object from parsed arguments, overriding defaults."""
-
-    dataset_path = {
-        "train": args.train_on,
-        "validation": args.validate_on,
-        "test": args.test_on,
-    }
-    data_dir, metadata_path = get_dataset_paths(dataset_path[for_task])
-
-    # Convert args to dict and add programmatically set fields
-    config_dict = vars(args).copy()
-    config_dict.update(
-        {
-            "task": for_task,
-            "data_dir": data_dir,
-            "metadata_path": metadata_path,
-        }
-    )
-
-    # Handle special cases for environment variables
-    if not config_dict.get("neptune_project"):
-        config_dict["neptune_project"] = os.getenv("NEPTUNE_PROJECT", "")
-    if not config_dict.get("neptune_api_token"):
-        config_dict["neptune_api_token"] = os.getenv("NEPTUNE_API_TOKEN", "")
-
-    # Convert to Config object
-    return Config(**config_dict)
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
