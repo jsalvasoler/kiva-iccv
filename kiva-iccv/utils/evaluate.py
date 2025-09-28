@@ -171,19 +171,24 @@ def evaluate_submission(
     }
 
 
-def print_formatted_evaluation_results(
-    cat_accuracies: dict[str, float], sample_counts: dict[str, int], phase: str = "Validation Phase"
+def save_results_file(
+    cat_accuracies: dict[str, float],
+    sample_counts: dict[str, int],
+    output_file: str,
+    phase: str = "Validation Phase",
 ) -> None:
     """
-    Print evaluation results in the specified format with question counts and scores.
+    Save evaluation results to a text file.
 
     Args:
         cat_accuracies: Dictionary with category-specific accuracy scores
         sample_counts: Dictionary with sample counts for each category
+        output_file: File path to save results
         phase: Phase name for the evaluation (e.g., "Validation Phase")
     """
     if not cat_accuracies or not sample_counts:
-        print("No results available to print.")
+        with open(output_file, "w") as f:
+            f.write("No results available to save.\n")
         return
 
     # Get total questions and correct answers
@@ -191,39 +196,44 @@ def print_formatted_evaluation_results(
     overall_accuracy = cat_accuracies.get("kiva-overall", 0.0)
     correct_answers = int(total_questions * overall_accuracy)
 
-    # Print summary line
-    print(
-        f"Evaluated {total_questions} questions across {total_questions} images. "
-        f"Score is {correct_answers} out of {total_questions}."
-    )
+    with open(output_file, "w") as f:
+        # Summary line
+        f.write(
+            f"Evaluated {total_questions} questions across {total_questions} images. "
+            f"Score is {correct_answers} out of {total_questions}.\n"
+        )
 
-    # Print overall scores
-    print(f"kiva-overall: {cat_accuracies.get('kiva-overall', 0.0):.2f}")
-    print(f"kiva-functions_overall: {cat_accuracies.get('kiva-functions_overall', 0.0):.2f}")
-    print(
-        f"kiva-functions-compositionality_overall: "
-        f"{cat_accuracies.get('kiva-functions-compositionality_overall', 0.0):.2f}"
-    )
-    print(f"kiva_overall: {cat_accuracies.get('kiva_overall', 0.0):.2f}")
+        # Overall scores
+        f.write(f"kiva-overall: {cat_accuracies.get('kiva-overall', 0.0):.2f}\n")
+        f.write(
+            f"kiva-functions_overall: {cat_accuracies.get('kiva-functions_overall', 0.0):.2f}\n"
+        )
+        f.write(
+            f"kiva-functions-compositionality_overall: "
+            f"{cat_accuracies.get('kiva-functions-compositionality_overall', 0.0):.2f}\n"
+        )
+        f.write(f"kiva_overall: {cat_accuracies.get('kiva_overall', 0.0):.2f}\n")
 
-    # Print KiVA transformation scores
-    for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
-        key = f"kiva_{trans_name}"
-        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+        # KiVA transformation scores
+        for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
+            key = f"kiva_{trans_name}"
+            f.write(f"{key}: {cat_accuracies.get(key, 0.0):.2f}\n")
 
-    # Print KiVA-functions transformation scores
-    for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
-        key = f"kiva-functions_{trans_name}"
-        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+        # KiVA-functions transformation scores
+        for trans_name in TRANSFORMATIONS_FOR_SIMPLE_GROUP:
+            key = f"kiva-functions_{trans_name}"
+            f.write(f"{key}: {cat_accuracies.get(key, 0.0):.2f}\n")
 
-    # Print KiVA-functions-compositionality transformation scores
-    for trans_name in TRANSFORMATIONS_FOR_COMPOSITE_GROUP:
-        key = f"kiva-functions-compositionality_{trans_name}"
-        print(f"{key}: {cat_accuracies.get(key, 0.0):.2f}")
+        # KiVA-functions-compositionality transformation scores
+        for trans_name in TRANSFORMATIONS_FOR_COMPOSITE_GROUP:
+            key = f"kiva-functions-compositionality_{trans_name}"
+            f.write(f"{key}: {cat_accuracies.get(key, 0.0):.2f}\n")
 
-    # Print phase information
-    print(f"Evaluating for {phase}")
-    print(f"Completed evaluation for {phase}")
+        # Phase information
+        f.write(f"Evaluating for {phase}\n")
+        f.write(f"Completed evaluation for {phase}\n")
+
+    print(f"📄 Results saved to: {output_file}")
 
 
 def print_results_by_category(cat_accuracies: dict[str, float]) -> None:
@@ -656,13 +666,9 @@ def main(
         print("Evaluation failed or no results available.")
         return
 
-    cat_accuracies = results["cat_accuracies"]
-
-    # Print formatted results
-    sample_counts = results["sample_counts"]
-    print_formatted_evaluation_results(cat_accuracies, sample_counts, "Validation Phase")
-
     # Print detailed results
+    sample_counts = results["sample_counts"]
+    cat_accuracies = results["cat_accuracies"]
     print_results_by_category(cat_accuracies)
 
     # Generate visualizations
@@ -707,9 +713,10 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     results = evaluate_submission(submission_data, ground_truth_data)
     category_accuracies = results["cat_accuracies"]
 
-    # Print formatted results
+    # Save formatted results to file
     sample_counts = results["sample_counts"]
-    print_formatted_evaluation_results(category_accuracies, sample_counts, "Validation Phase")
+    results_file = f"{args.output_dir}/results_{test_dataset_name}.txt"
+    save_results_file(category_accuracies, sample_counts, results_file, "Validation Phase")
 
     # Print detailed results
     print_results_by_category(category_accuracies)
