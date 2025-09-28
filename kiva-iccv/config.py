@@ -52,6 +52,10 @@ class Config(BaseModel):
         default=1024,
         description="On-the-fly epoch length - essentially regulates how often we evaluate",
     )
+    use_mixed_precision: bool = Field(
+        default=True,
+        description="Use automatic mixed precision training with torch.cuda.amp",
+    )
 
     # Neptune logging
     use_neptune: bool = Field(default=False, description="Use Neptune for logging")

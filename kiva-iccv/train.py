@@ -20,6 +20,7 @@ from loss import (
 )
 from model import SiameseAnalogyNetwork
 from on_the_fly_dataset import OnTheFlyKiVADataset
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from utils.evaluate import run_evaluation_analysis
@@ -64,6 +65,7 @@ def load_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scaler: GradScaler | None = None,
 ) -> tuple[int, float, float, float]:
     """Load checkpoint and restore training state.
 
@@ -90,6 +92,10 @@ def load_checkpoint(
 
     # Load scheduler state
     scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    # Load scaler state if available and scaler is provided
+    if scaler is not None and "scaler_state_dict" in checkpoint:
+        scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
     # Restore random states for reproducibility
     torch.set_rng_state(checkpoint["random_state"])
@@ -278,9 +284,16 @@ def evaluate(
                 correct_idx.to(device),
             )
 
-            t_example, t_choice_a, t_choice_b, t_choice_c = model(
-                ex_before, ex_after, test_before, ch_a, ch_b, ch_c
-            )
+            # Use autocast for evaluation if CUDA is available (for consistency)
+            if device.type == "cuda":
+                with autocast("cuda"):
+                    t_example, t_choice_a, t_choice_b, t_choice_c = model(
+                        ex_before, ex_after, test_before, ch_a, ch_b, ch_c
+                    )
+            else:
+                t_example, t_choice_a, t_choice_b, t_choice_c = model(
+                    ex_before, ex_after, test_before, ch_a, ch_b, ch_c
+                )
 
             # Compute similarities between example transformation and each choice transformation
             sim_a = torch.cosine_similarity(t_example, t_choice_a, dim=1)
@@ -448,6 +461,11 @@ def train(args) -> str | None:
     # Scheduler
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_config.epochs)
 
+    # Mixed precision scaler
+    scaler = (
+        GradScaler("cuda") if train_config.use_mixed_precision and device.type == "cuda" else None
+    )
+
     print(
         f"\n🚀 Starting training on '{args.train_on}' dataset,"
         f" validating on '{args.validate_on}'..."
@@ -456,6 +474,12 @@ def train(args) -> str | None:
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {total_params}")
     print(f"Number of trainable parameters: {trainable_params}")
+
+    # Print mixed precision status
+    if scaler is not None:
+        print("⚡ Mixed precision training enabled (torch.cuda.amp)")
+    else:
+        print("📊 Using standard precision training")
     best_accuracy = 0.0
     start_epoch = 0
 
@@ -476,12 +500,12 @@ def train(args) -> str | None:
 
         if os.path.exists(checkpoint_last_path):
             start_epoch, best_accuracy, _, _ = load_checkpoint(
-                checkpoint_last_path, model, optimizer, scheduler
+                checkpoint_last_path, model, optimizer, scheduler, scaler
             )
             print("🔄 Resuming from last checkpoint")
         elif os.path.exists(checkpoint_best_path):
             start_epoch, best_accuracy, _, _ = load_checkpoint(
-                checkpoint_best_path, model, optimizer, scheduler
+                checkpoint_best_path, model, optimizer, scheduler, scaler
             )
             print("🔄 Resuming from best checkpoint (no last checkpoint found)")
         else:
@@ -512,10 +536,23 @@ def train(args) -> str | None:
             correct_idx = correct_idx.to(device)
 
             optimizer.zero_grad()
-            model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
-            loss = criterion(model_outputs, correct_idx)
-            loss.backward()
-            optimizer.step()
+
+            # Mixed precision forward pass
+            if scaler is not None:
+                with autocast("cuda"):
+                    model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
+                    loss = criterion(model_outputs, correct_idx)
+
+                # Mixed precision backward pass
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Standard precision
+                model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
+                loss = criterion(model_outputs, correct_idx)
+                loss.backward()
+                optimizer.step()
             running_loss += loss.item()
 
             # Calculate training accuracy on-the-fly
@@ -570,6 +607,10 @@ def train(args) -> str | None:
         }
         if torch.cuda.is_available():
             checkpoint["cuda_random_state"] = torch.cuda.get_rng_state()
+
+        # Save scaler state if using mixed precision
+        if scaler is not None:
+            checkpoint["scaler_state_dict"] = scaler.state_dict()
 
         torch.save(checkpoint, checkpoint_last_path)
 
@@ -792,3 +833,5 @@ if __name__ == "__main__":
     # --- Testing Phase ---
     if args.do_test:
         test(args, neptune_run_id)
+
+    
