@@ -36,7 +36,7 @@ class Config(BaseModel):
     encoder_name: str = Field(
         default="vit_small_patch16_224",
         description=(
-            "Encoder name. E.g. resnet18, resnet50, vit_small_patch16_224, vit_base_patch16_224",
+            "Encoder name. E.g. resnet18, resnet50, vit_small_patch16_224, vit_base_patch16_224"
         ),
     )
     learning_rate: float = Field(default=1e-3, description="Learning rate")
@@ -49,7 +49,7 @@ class Config(BaseModel):
         description="Device to use for training",
     )
     otf_epoch_length: int = Field(
-        default=8192 * 2,
+        default=1024,
         description="On-the-fly epoch length - essentially regulates how often we evaluate",
     )
 
