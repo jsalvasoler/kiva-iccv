@@ -11,7 +11,9 @@ class Config(BaseModel):
 
     # Paths will be provided by the argparser
     data_dir: str = Field(description="Path to the data directory")
-    metadata_path: str = Field(description="Path to the metadata file")
+    metadata_path: str | None = Field(
+        description="Path to the metadata file (None for test datasets without labels)"
+    )
     task: Literal["train", "validation", "test"] = Field(description="Task type")
     use_otf: bool = Field(
         default=False,
@@ -32,7 +34,7 @@ class Config(BaseModel):
     embedding_dim: int = Field(default=512, description="Embedding dimension")
     freeze_encoder: bool = Field(default=False, description="Freeze encoder parameters")
     encoder_name: str = Field(
-        default="resnet18",
+        default="vit_small_patch16_224",
         description=(
             "Encoder name. E.g. resnet18, resnet50, vit_small_patch16_224, vit_base_patch16_224",
         ),
@@ -99,27 +101,35 @@ class Config(BaseModel):
         return cls(**config_dict)
 
 
-def get_dataset_paths(dataset_keyword: str) -> tuple[str, str]:
-    """Returns the data directory and metadata path based on a keyword."""
+def get_dataset_paths(dataset_keyword: str) -> tuple[str, str | None]:
+    """Returns the data directory and metadata path based on a keyword.
+
+    For test datasets without labels, metadata_path will be None.
+    """
     base_data_path = "./data"
     mapping = {
         "unit": ("split_unit", "unit.json"),
         "train": ("split_train", "train.json"),
         "validation": ("split_validation", "validation.json"),
         "validation_sample": ("split_validation", "validation.json"),
-        "test": ("split_test", "test.json"),
+        "test": ("split_test", None),
     }
     if dataset_keyword not in mapping:
         raise ValueError(f"Invalid dataset keyword '{dataset_keyword}'.")
     split_dir, meta_file = mapping[dataset_keyword]
 
     data_dir = os.path.join(base_data_path, split_dir)
-    metadata_path = os.path.join(base_data_path, meta_file)
 
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"Data directory not found: {data_dir}")
-    if not os.path.isfile(metadata_path):
-        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+
+    # Handle case where no metadata file is expected (test without labels)
+    if meta_file is None:
+        metadata_path = None
+    else:
+        metadata_path = os.path.join(base_data_path, meta_file)
+        if not os.path.isfile(metadata_path):
+            raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
 
     return data_dir, metadata_path
 

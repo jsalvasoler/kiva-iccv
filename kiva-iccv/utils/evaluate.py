@@ -3,7 +3,8 @@ KiVA Evaluation Script
 This script evaluates model submissions on the KiVA dataset and generates visualization plots.
 
 Usage:
-    python evaluate.py --submission_path path/to/submission.json --plots_dir ../plots
+    python evaluate.py --submission_path path/to/submission_{dataset}.json \
+        --plots_dir ../plots_{dataset}
 """
 
 import json
@@ -31,7 +32,7 @@ def load_submission_data(submission_path: str) -> list[dict[str, str]]:
     Load submission data from JSON file.
 
     Args:
-        submission_path: Path to the submission.json file
+        submission_path: Path to the submission_{dataset}.json file
 
     Returns:
         List of dictionaries with 'id' and 'answer' keys
@@ -638,8 +639,8 @@ def main(
     Main evaluation pipeline.
 
     Args:
-        submission_path: Path to submission.json file
-        plots_dir: Directory to save generated plots
+        submission_path: Path to submission_{dataset}.json file
+        plots_dir: Directory to save generated plots (e.g., plots_{dataset})
         metadata_path: Path to metadata.json file
     """
     print("=== KiVA Evaluation Pipeline ===")
@@ -684,7 +685,7 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
         print("⚠️  No output directory available. Skipping evaluation analysis.")
         return
 
-    submission_path = f"{args.output_dir}/submission.json"
+    submission_path = f"{args.output_dir}/submission_{test_dataset_name}.json"
     if not os.path.exists(submission_path):
         print(f"⚠️  Submission file not found: {submission_path}. Skipping evaluation analysis.")
         return
@@ -713,8 +714,8 @@ def run_evaluation_analysis(args, test_dataset_name: str) -> None:
     # Print detailed results
     print_results_by_category(category_accuracies)
 
-    # Create plots directory in output_dir
-    plots_dir = f"{args.output_dir}/plots"
+    # Create plots directory in output_dir with dataset-specific naming
+    plots_dir = f"{args.output_dir}/plots_{test_dataset_name}"
     os.makedirs(plots_dir, exist_ok=True)
 
     # Generate visualizations

@@ -168,7 +168,7 @@ def print_experiment_results(
     num_parameters: int,
     num_trainable_parameters: int,
     experiment_type: str = "train",
-    test_accuracy: float = None,
+    test_accuracy: float | None = None,
 ) -> None:
     """Log experiment results to terminal (no file writing)."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -205,7 +205,8 @@ def print_experiment_results(
         print(f"  Final train accuracy:  {final_train_accuracy:.2f}%")
         print(f"  Best validation acc:   {best_accuracy:.2f}%")
     elif experiment_type == "test":
-        print(f"  Test accuracy:         {test_accuracy:.2f}%")
+        x = f"{test_accuracy:.2f}%" if test_accuracy is not None else "N/A"
+        print(f"  Test accuracy:         {x}")
     print("\n" + ("=" * 80))
 
 
@@ -241,15 +242,18 @@ def evaluate(
     device: torch.device,
     save_predictions: bool = False,
     dataset: VisualAnalogyDataset = None,
-) -> float:
+    test_on: str = None,
+) -> float | None:
     """
     Evaluates the model on a given dataset and calculates accuracy.
     Optionally saves predictions to a submission file.
+    Returns None if no labels are available (test set without ground truth).
     """
     model.eval()
     total_correct = 0
     total_samples = 0
     predictions = []
+    has_labels = dataset is not None and dataset.labels_available()
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="  -- Evaluating --  "):
@@ -289,12 +293,13 @@ def evaluate(
             # Get predictions by finding the index of the max similarity score
             predictions_batch = torch.argmax(all_sims, dim=1)
 
-            # --- Update metrics ---
-            total_correct += (predictions_batch == correct_idx).sum().item()
+            # --- Update metrics only if labels are available ---
+            if has_labels:
+                total_correct += (predictions_batch == correct_idx).sum().item()
             total_samples += ex_before.size(0)
 
             # --- Store predictions for submission if requested ---
-            if save_predictions and dataset:
+            if save_predictions:
                 for i, pred_idx in enumerate(predictions_batch):
                     choice_map = {0: "(A)", 1: "(B)", 2: "(C)"}
                     predicted_choice = choice_map[pred_idx.item()]
@@ -302,11 +307,16 @@ def evaluate(
                     batch_sample_id = sample_id[i]
                     predictions.append({"id": batch_sample_id, "answer": predicted_choice})
 
-    accuracy = 100 * total_correct / total_samples
+    # Calculate accuracy only if labels are available
+    accuracy = 100 * total_correct / total_samples if has_labels else None
 
     # Save predictions if requested
     if save_predictions and predictions:
-        submission_file = f"{args.output_dir}/submission.json"
+        # Use test_on-specific filename if provided, otherwise default to submission.json
+        if test_on:
+            submission_file = f"{args.output_dir}/submission_{test_on}.json"
+        else:
+            submission_file = f"{args.output_dir}/submission.json"
         with open(submission_file, "w") as f:
             json.dump(predictions, f, indent=4)
         print(f"📄 Submission file saved: {submission_file}")
@@ -320,11 +330,18 @@ def init_neptune(config: Config, args, experiment_type: str):
     if not config.use_neptune:
         return None
 
+    # For testing, Neptune is optional - don't raise error if token missing
     if not config.neptune_api_token:
-        raise ValueError(
-            "⚠️  Neptune API token not provided. Please provide it with the --neptune_api_token "
-            "flag or set the NEPTUNE_API_TOKEN environment variable."
-        )
+        if experiment_type == "test":
+            print(
+                "⚠️  Neptune API token not provided. Testing will proceed without Neptune logging."
+            )
+            return None
+        else:
+            raise ValueError(
+                "⚠️  Neptune API token not provided. Please provide it with the --neptune_api_token "
+                "flag or set the NEPTUNE_API_TOKEN environment variable."
+            )
 
     # Resume existing Neptune run if specified
     if args.resume and experiment_type == "train":
@@ -368,6 +385,15 @@ def train(args) -> str | None:
     # 1. Setup train and validation dataloaders
     train_config = Config.from_args(args, for_task="train")
     train_dataset = dataset_factory(args, train_config)
+
+    # Check if training dataset has labels
+    if hasattr(train_dataset, "labels_available") and not train_dataset.labels_available():
+        raise ValueError(
+            "Cannot train on a dataset without labels. "
+            "Training requires ground truth labels for supervision. "
+            "Please provide a dataset with metadata/labels for training."
+        )
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config.batch_size,
@@ -603,24 +629,41 @@ def test(args, neptune_run_id: str | None) -> None:
         "data_dir",
         "metadata_path",
         "task",
+        "use_neptune",
     ]
+    warnings_list = []
     for field, value in test_config.model_dump().items():
         if field in skip_fields:
             continue
         if value != provided_test_config_mdump[field]:
-            warnings.warn(
+            warnings_list.append(
                 f"Config mismatch for {field}: {value} != {provided_test_config_mdump[field]}. "
                 f"Using the setting from the saved config, which matches the model checkpoint: "
-                f"{field}={value}",
-                stacklevel=2,
+                f"{field}={value}"
             )
+    if warnings_list:
+        warnings.warn(
+            "Config mismatches detected:\n" + "\n - ".join(warnings_list),
+            stacklevel=2,
+        )
+    # override use_neptune to args.use_neptune
+    test_config.use_neptune = args.use_neptune
 
-    # Initialize Neptune logging
-    if neptune_run_id is None:
-        neptune_run = init_neptune(test_config, args, "test")
+    # Initialize Neptune logging (optional for testing)
+    neptune_run = None
+    if test_config.use_neptune:
+        if neptune_run_id is None:
+            neptune_run = init_neptune(test_config, args, "test")
+        else:
+            # continue the existing Neptune run
+            try:
+                neptune_run = neptune.init_run(with_id=neptune_run_id)
+            except Exception as e:
+                print(f"⚠️  Could not resume Neptune run {neptune_run_id}: {e}")
+                print("Testing will proceed without Neptune logging.")
+                neptune_run = None
     else:
-        # continue the existing Neptune run
-        neptune_run = neptune.init_run(with_id=neptune_run_id)
+        print("🔕 Neptune logging disabled for testing")
 
     # Initialize a fresh model instance and load the best saved weights
     model = SiameseAnalogyNetwork(
@@ -668,6 +711,7 @@ def test(args, neptune_run_id: str | None) -> None:
             "data_dir",
             "metadata_path",
             "task",
+            "use_neptune",
         ]
         for field, value in saved_config.items():
             if field in skip_fields:
@@ -686,19 +730,31 @@ def test(args, neptune_run_id: str | None) -> None:
         num_workers=test_config.num_workers,
     )
 
-    # Run final evaluation and generate submission file
+    # Run final evaluation and always generate submission file
     test_accuracy = evaluate(
-        model, test_loader, device, save_predictions=neptune_run is not None, dataset=test_dataset
+        model,
+        test_loader,
+        device,
+        save_predictions=True,
+        dataset=test_dataset,
+        test_on=args.test_on,
     )
-    print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
 
-    # Run evaluation analysis if submission file was generated
-    if neptune_run is not None:
-        run_evaluation_analysis(args, args.test_on)
+    if test_accuracy is not None:
+        print(f"\n✅ Final Test Accuracy: {test_accuracy:.2f}%")
+        # Run evaluation analysis if submission file was generated and labels are available
+        submission_file = f"{args.output_dir}/submission_{args.test_on}.json"
+        if os.path.exists(submission_file):
+            run_evaluation_analysis(args, args.test_on)
+    else:
+        print("\n✅ Test predictions generated (no ground truth labels available)")
+        # Skip evaluation analysis when no labels are available
+        print("⚠️  Skipping evaluation analysis - no ground truth labels available")
 
     # Log test results to Neptune if enabled
     if neptune_run:
-        neptune_run["testing/test_accuracy"] = test_accuracy
+        if test_accuracy is not None:
+            neptune_run["testing/test_accuracy"] = test_accuracy
         neptune_run["testing/total_parameters"] = sum(p.numel() for p in model.parameters())
         neptune_run.stop()
         print("🔗 Neptune test run completed and stopped")
