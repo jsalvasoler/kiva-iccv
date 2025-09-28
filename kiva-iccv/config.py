@@ -49,7 +49,7 @@ class Config(BaseModel):
         description="Device to use for training",
     )
     otf_epoch_length: int = Field(
-        default=1024,
+        default=8192 * 2,
         description="On-the-fly epoch length - essentially regulates how often we evaluate",
     )
     use_mixed_precision: bool = Field(
