@@ -399,6 +399,8 @@ def train(args) -> str | None:
         batch_size=train_config.batch_size,
         shuffle=True,
         num_workers=train_config.num_workers,
+        pin_memory=True,
+        persistent_workers=True,
     )
 
     val_config = Config.from_args(args, for_task="validation")
@@ -535,7 +537,7 @@ def train(args) -> str | None:
         train_accuracy = 100 * train_correct / train_total
 
         # --- 💡 Validation at the end of each epoch ---
-        val_accuracy = evaluate(model, val_loader, device)
+        val_accuracy = evaluate(model, val_loader, device, dataset=val_dataset)
         print(
             f"Epoch {epoch + 1}/{train_config.epochs}:"
             f" Train Loss: {avg_train_loss:.4f}"
