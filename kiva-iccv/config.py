@@ -48,7 +48,7 @@ class Config(BaseModel):
         default="cuda" if torch.cuda.is_available() else "cpu",
         description="Device to use for training",
     )
-    oft_epoch_length: int = Field(
+    otf_epoch_length: int = Field(
         default=8192 * 2,
         description="On-the-fly epoch length - essentially regulates how often we evaluate",
     )
