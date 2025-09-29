@@ -132,7 +132,7 @@ class TransformationEncoderDINOv3(nn.Module):
         # The exact number of register tokens depends on the model, but we can infer it
         # by running a forward pass and checking the output size
 
-        # For now, assume 4 register tokens (common in DINOv3)
+        # DINOv3 has 4 register tokens (https://github.com/facebookresearch/dinov3/issues/124)
         self.num_register_tokens = 4
 
         # Create segment ID pattern: [CLS, registers, img1_patches, img2_patches]
