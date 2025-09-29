@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import tempfile
 import warnings
 from datetime import datetime
@@ -833,3 +834,7 @@ if __name__ == "__main__":
     # --- Testing Phase ---
     if args.do_test:
         test(args, neptune_run_id)
+
+    # --- Cleanup Phase ---
+    if not neptune_run_id:
+        shutil.rmtree(args.output_dir)
