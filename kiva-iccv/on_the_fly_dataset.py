@@ -529,23 +529,6 @@ class OnTheFlyKiVADataset(Dataset):
 
 
 def main(case):
-    # ruff: noqa: ERA001
-    # # --- Define the distribution from your table ---
-    # distribution = {
-    #     "kiva-Counting": 64,
-    #     "kiva-Reflect": 32,
-    #     "kiva-Resizing": 32,
-    #     "kiva-Rotation": 48,
-    #     "kiva-functions-Counting": 128,
-    #     "kiva-functions-Reflect": 32,
-    #     "kiva-functions-Resizing": 96,
-    #     "kiva-functions-Rotation": 112,
-    #     "kiva-functions-compositionality-Counting,Reflect": 256,
-    #     "kiva-functions-compositionality-Counting,Resizing": 768,
-    #     "kiva-functions-compositionality-Counting,Rotation": 896,
-    #     "kiva-functions-compositionality-Reflect,Resizing": 192,
-    #     "kiva-functions-compositionality-Resizing,Rotation": 96,
-    # }
     distribution = {
         "kiva-Counting": 0,
         "kiva-Reflect": 0,
