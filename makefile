@@ -2,6 +2,9 @@ fmt:
 	uv tool run ruff format
 	uv tool run ruff check --fix
 
+set-up-data:
+	scripts/set_up_data.sh
+
 test-unit:
 	uv run --env-file .env python kiva-iccv/train.py --do_train --do_test --train_on unit --validate_on unit --test_on unit
 

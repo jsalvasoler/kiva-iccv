@@ -5,6 +5,15 @@ A PyTorch implementation of a Siamese Network for solving visual analogies, desi
 ## 🚀 Quick Start
 
 ### Prerequisites
+
+1. Install [uv](https://docs.astral.sh/uv/)
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. Install dependencies
+
 ```bash
 # Install dependencies using uv
 uv sync
@@ -12,11 +21,11 @@ uv sync
 
 This will automatically install all dependencies from your `pyproject.toml` file.
 
-### Useful commands and basic cli usage
+### Useful commands and basic CLI usage
 
-You can start by copying the `.env.example` file to `.env` and filling in the API token and project name.
+You can start by copying the `.env.template` file to `.env` and filling in the API token and project name.
 ```bash
-cp .env.example .env
+cp .env.template .env
 ```
 
 Main commands:
@@ -34,9 +43,15 @@ make fmt # format the code
 
 ## 📁 Data
 
-### Load the data
+### Set up the data by downloading from different sources and processing them
 
-1. Load the basic competition data running:
+```bash
+make set-up-data
+```
+
+#### What the script is doing
+
+1. Load the basic competition data from [official competition repository](https://github.com/ey242/KiVA-challenge):
 
 ```bash
 uv run python kiva-iccv/utils/download.py
@@ -57,28 +72,37 @@ data/
 
 **Note:** The `test` dataset has no metadata since the labels have not been released yet.
 
-2. Run the following commands to create the subimages that will be used by the model.
+2. Create the subimages that will be used by the model. This splits the images into 6 subimages for each sample.
+The naming convention is:
+- `{sample_id}_ex_before.jpg` - Example "before" image
+- `{sample_id}_ex_after.jpg` - Example "after" image  
+- `{sample_id}_test_before.jpg` - Test "before" image
+- `{sample_id}_choice_a.jpg` - Choice A image
+- `{sample_id}_choice_b.jpg` - Choice B image
+- `{sample_id}_choice_c.jpg` - Choice C image
+
+Run the following commands to create the subimages:
 ```bash
 for dataset in train validation test unit; do
     uv run python kiva-iccv/utils/transform.py --dataset $dataset
 done
 ```
 
-3. After this, the `data/` directory will have the following structure:
+After this, the `data/` directory will have the following structure:
 ```
 data/
 ├── train/           # Training images
-|   ├── sample1.jpg
-|   ├── sample2.jpg
-|   └── ...
+│   ├── sample1.jpg
+│   ├── sample2.jpg
+│   └── ...
 ├── validation/      # Validation images
-|   ├── sample1.jpg
-|   ├── sample2.jpg
-|   └── ...
+│   ├── sample1.jpg
+│   ├── sample2.jpg
+│   └── ...
 ├── test/           # Test images
-|   ├── sample1.jpg
-|   ├── sample2.jpg
-|   └── ...
+│   ├── sample1.jpg
+│   ├── sample2.jpg
+│   └── ...
 ├── split_train/           # Split training images
 │   ├── sample1_ex_before.jpg
 │   ├── sample1_ex_after.jpg
@@ -87,33 +111,26 @@ data/
 │   ├── sample1_choice_b.jpg
 │   └── sample1_choice_c.jpg
 ├── split_validation/      # Split validation images
-|   └── ...
+│   └── ...
 ├── split_test/           # Split test images
-|   └── ...
+│   └── ...
 ├── train.json            # Training metadata
 └── validation.json       # Validation metadata
 ```
 
-### Untransformed images for the on-the-fly dataset
+3. Download the untransformed images for the on-the-fly dataset.
+We use the same base images as in the KiVA original paper, which are stored in the paper's [repository](https://github.com/ey242/KiVA).
+
+Run the following commands to clone the repository and copy the untransformed images to the `data/KiVA/` directory:
 ```bash
 mkdir -p KiVA
 mkdir -p data/KiVA
 cd KiVA
-git clone https://github.com/ey242/KiVA.git
-cp "KiVA/untransformed objects/" ../data/KiVA/
-cp "KiVA/transformed objects/" ../data/KiVA/
+git clone --depth 1 --branch main https://github.com/ey242/KiVA.git
+cp -r "KiVA/untransformed objects/" ../data/KiVA/
 cd ../
 rm -rf KiVA
 ```
-
-### Image Naming Convention
-Each sample requires 6 images:
-- `{sample_id}_ex_before.jpg` - Example "before" image
-- `{sample_id}_ex_after.jpg` - Example "after" image  
-- `{sample_id}_test_before.jpg` - Test "before" image
-- `{sample_id}_choice_a.jpg` - Choice A image
-- `{sample_id}_choice_b.jpg` - Choice B image
-- `{sample_id}_choice_c.jpg` - Choice C image
 
 ## 🧠 Model Architecture
 
