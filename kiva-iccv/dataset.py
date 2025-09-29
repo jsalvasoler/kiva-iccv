@@ -3,9 +3,9 @@ import random
 from pathlib import Path
 
 import torch
-from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.io import read_image
 
 
 class VisualAnalogyDataset(Dataset):
@@ -15,6 +15,7 @@ class VisualAnalogyDataset(Dataset):
         if transform is None:
             self.transform = transforms.Compose(
                 [
+                    transforms.ToPILImage(),  # Convert tensor to PIL for existing transforms
                     transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -73,7 +74,10 @@ class VisualAnalogyDataset(Dataset):
         images = []
         for img_type in image_types:
             img_path = self.root_dir / f"{sample_id}_{img_type}.jpg"
-            image = Image.open(img_path).convert("RGB")
+            image = read_image(str(img_path))
+            # Ensure RGB format (3 channels) - read_image returns tensor in CHW format
+            if image.shape[0] == 4:  # RGBA
+                image = image[:3, :, :]  # Keep only RGB channels
             if self.transform:
                 image = self.transform(image)
             images.append(image)

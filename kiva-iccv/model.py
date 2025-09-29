@@ -190,26 +190,33 @@ class SiameseAnalogyNetwork(nn.Module):
                 all_embeddings, batch_size, dim=0
             )
         else:
-            # Fallback to old approach for ResNet models
-            # Determine the batch size from one of the tensors
+            # Optimized approach for ResNet models - process in parallel without concatenation
             batch_size = ex_before.size(0)
 
-            # Reshape all tensors into a single batch, preserving the C, H, W dimensions
-            # and stacking along a new dimension (dim=0)
-            all_tensors = torch.cat(
-                [ex_before, ex_after, test_before, choice_a, choice_b, choice_c], dim=0
+            # Stack tensors for parallel processing (no memory copy)
+            # Shape: (batch_size, 6, C, H, W) # noqa: ERA001
+            input_stack = torch.stack(
+                [ex_before, ex_after, test_before, choice_a, choice_b, choice_c], dim=1
             )
 
-            # Process the combined batch
-            all_embeddings = self.projection(self.encoder(all_tensors).flatten(1))
+            # Reshape to process all images in parallel
+            input_batch = input_stack.view(-1, *input_stack.shape[2:])  # (batch_size * 6, C, H, W)
 
-            # Split the embeddings back based on the batch size
-            t_ex_before = all_embeddings[0 * batch_size : 1 * batch_size]
-            t_ex_after = all_embeddings[1 * batch_size : 2 * batch_size]
-            t_test_before = all_embeddings[2 * batch_size : 3 * batch_size]
-            t_choice_a = all_embeddings[3 * batch_size : 4 * batch_size]
-            t_choice_b = all_embeddings[4 * batch_size : 5 * batch_size]
-            t_choice_c = all_embeddings[5 * batch_size : 6 * batch_size]
+            # Process all embeddings in one forward pass
+            all_embeddings = self.projection(self.encoder(input_batch).flatten(1))
+
+            # Reshape back to separate the 6 different image types
+            all_embeddings = all_embeddings.view(
+                batch_size, 6, -1
+            )  # (batch_size, 6, embedding_dim)
+
+            # Extract embeddings for each image type
+            t_ex_before = all_embeddings[:, 0]  # (batch_size, embedding_dim)
+            t_ex_after = all_embeddings[:, 1]
+            t_test_before = all_embeddings[:, 2]
+            t_choice_a = all_embeddings[:, 3]
+            t_choice_b = all_embeddings[:, 4]
+            t_choice_c = all_embeddings[:, 5]
 
             # Calculate the transformation vectors using simple subtraction
             t_example = t_ex_after - t_ex_before
@@ -217,10 +224,16 @@ class SiameseAnalogyNetwork(nn.Module):
             t_choice_b_vec = t_choice_b - t_test_before
             t_choice_c_vec = t_choice_c - t_test_before
 
-        # Normalize the final vectors for cosine similarity
-        t_example = F.normalize(t_example, p=2, dim=-1)
-        t_choice_a_vec = F.normalize(t_choice_a_vec, p=2, dim=-1)
-        t_choice_b_vec = F.normalize(t_choice_b_vec, p=2, dim=-1)
-        t_choice_c_vec = F.normalize(t_choice_c_vec, p=2, dim=-1)
+        # Batch normalize all vectors at once for efficiency
+        all_vectors = torch.stack(
+            [t_example, t_choice_a_vec, t_choice_b_vec, t_choice_c_vec], dim=1
+        )
+        all_vectors_normalized = F.normalize(all_vectors, p=2, dim=-1)
+
+        # Extract normalized vectors
+        t_example = all_vectors_normalized[:, 0]
+        t_choice_a_vec = all_vectors_normalized[:, 1]
+        t_choice_b_vec = all_vectors_normalized[:, 2]
+        t_choice_c_vec = all_vectors_normalized[:, 3]
 
         return t_example, t_choice_a_vec, t_choice_b_vec, t_choice_c_vec
