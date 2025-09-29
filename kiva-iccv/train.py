@@ -445,11 +445,14 @@ def train(args) -> str | None:
     ).to(device)
 
     # Initialize loss
-    criterion = {
-        "standard_triplet": StandardTripletAnalogyLoss(margin=train_config.margin),
-        "contrastive": ContrastiveAnalogyLoss(margin=train_config.margin),
-        "softmax": SoftmaxAnalogyLoss(temperature=train_config.temperature),
-    }[train_config.loss_type]
+    if train_config.loss_type == "standard_triplet":
+        criterion = StandardTripletAnalogyLoss(margin=train_config.margin)
+    elif train_config.loss_type == "contrastive":
+        criterion = ContrastiveAnalogyLoss(margin=train_config.margin)
+    elif train_config.loss_type == "softmax":
+        criterion = SoftmaxAnalogyLoss(temperature=train_config.temperature)
+    else:
+        raise ValueError(f"Unknown loss type: {train_config.loss_type}")
 
     # Optimizer
     optimizer = optim.AdamW(
