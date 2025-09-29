@@ -414,6 +414,7 @@ def train(args) -> str | None:
         shuffle=True,
         num_workers=train_config.num_workers,
         pin_memory=True,
+        drop_last=args.use_otf,
         persistent_workers=True,
     )
 
