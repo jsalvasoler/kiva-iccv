@@ -41,13 +41,6 @@ def apply_color(image, target_color, type, initial_color=None):
         target_color = color_map[color].view(3, 1, 1).repeat(1, height, width) / 255.0
 
         blended_img = (img + target_color) / 2  # Blend the original image with target color
-        # To create a more distinctive change, use the option below; increasing the color
-        # distinction
-        # will decrease differentiation in object details
-        # ruff: noqa: ERA001
-        # blended_img = img * (1 - 0.7) + target_color * 0.7
-        # # Blend the original image (0.3) with target color (0.7)
-
         blended_img = torch.clamp(blended_img, 0, 1)
         blended_img = (blended_img * 255).byte()
 

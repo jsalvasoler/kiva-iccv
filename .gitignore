@@ -4,6 +4,7 @@ notebook/*.svg
 notebook/*.json
 output/*
 .neptune/*
+.cursor/*
 
 # envs
 .venv/

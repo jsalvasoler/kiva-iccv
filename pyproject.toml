@@ -58,7 +58,7 @@ select = [
     "T20", # print
     # "PL",  # pylint
 ]
-ignore = ["T20"]
+ignore = ["T20", "ERA001"]
 
 [tool.ruff.lint.per-file-ignores]
 "kiva-iccv/utils/helper.py" = ["E501"] # some lines like prompts are long, we don't care
