@@ -9,6 +9,7 @@ import neptune
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import yaml
 from config import (
     Config,
     create_argument_parser,
@@ -218,25 +219,23 @@ def print_experiment_results(
 
 
 def dataset_factory(args, config: Config) -> Dataset:
-    distribution = {
-        "kiva-Counting": 64,
-        "kiva-Reflect": 32,
-        "kiva-Resizing": 32,
-        "kiva-Rotation": 48,
-        "kiva-functions-Counting": 128,
-        "kiva-functions-Reflect": 32,
-        "kiva-functions-Resizing": 96,
-        "kiva-functions-Rotation": 112,
-        "kiva-functions-compositionality-Counting,Reflect": 256,
-        "kiva-functions-compositionality-Counting,Resizing": 768,
-        "kiva-functions-compositionality-Counting,Rotation": 896,
-        "kiva-functions-compositionality-Reflect,Resizing": 192,
-        "kiva-functions-compositionality-Resizing,Rotation": 96,
-    }
     if config.task == "train" and config.use_otf:
+        # Load custom distribution config from YAML if provided
+        distribution_config = None
+        if args.distribution_config:
+            if not os.path.exists(args.distribution_config):
+                raise FileNotFoundError(
+                    f"Distribution config file not found: {args.distribution_config}"
+                )
+            with open(args.distribution_config) as f:
+                distribution_config = yaml.safe_load(f)
+                print(f"📋 Loaded custom distribution config from: {args.distribution_config}")
+        else:
+            print("📋 Using default distribution config")
+
         return OnTheFlyKiVADataset(
             objects_dir="./data/KiVA/untransformed objects",
-            distribution_config=distribution,
+            distribution_config=distribution_config,
             epoch_length=config.otf_epoch_length,
         )
 

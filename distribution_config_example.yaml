@@ -1,0 +1,28 @@
+# Example distribution config for on-the-fly dataset generation
+# This file specifies the relative weights for each transformation type
+# during on-the-fly data generation.
+#
+# Usage:
+#   python train.py --do_train --use_otf --distribution_config distribution_config_example.yaml
+#
+# The weights are normalized automatically, so you can use any positive numbers.
+# Higher values mean more samples from that transformation type will be generated.
+
+# Basic transformations (kiva level)
+kiva-Counting: 64
+kiva-Reflect: 32
+kiva-Resizing: 32
+kiva-Rotation: 48
+
+# Function transformations (kiva-functions level)
+kiva-functions-Counting: 128
+kiva-functions-Reflect: 32
+kiva-functions-Resizing: 96
+kiva-functions-Rotation: 112
+
+# Compositional transformations (kiva-functions-compositionality level)
+kiva-functions-compositionality-Counting,Reflect: 256
+kiva-functions-compositionality-Counting,Resizing: 768
+kiva-functions-compositionality-Counting,Rotation: 896
+kiva-functions-compositionality-Reflect,Resizing: 192
+kiva-functions-compositionality-Resizing,Rotation: 96

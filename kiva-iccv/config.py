@@ -174,6 +174,15 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default="",
         help="Output directory for model and predictions. Must be specified if only testing.",
     )
+    parser.add_argument(
+        "--distribution_config",
+        type=str,
+        default="",
+        help=(
+            "Path to YAML file containing custom distribution config for on-the-fly "
+            "dataset generation. Look at distribution_config_example.yaml for an example."
+        ),
+    )
 
     # Dataset arguments: unit, train, validation, test
     dataset_options = ["unit", "train", "validation", "test"]

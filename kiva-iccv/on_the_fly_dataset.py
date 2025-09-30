@@ -22,17 +22,38 @@ from utils.dataset import (
     _kiva_rotation,
 )
 
+# Default distribution config for on-the-fly dataset generation
+DEFAULT_DISTRIBUTION_CONFIG = {
+    "kiva-Counting": 64,
+    "kiva-Reflect": 32,
+    "kiva-Resizing": 32,
+    "kiva-Rotation": 48,
+    "kiva-functions-Counting": 128,
+    "kiva-functions-Reflect": 32,
+    "kiva-functions-Resizing": 96,
+    "kiva-functions-Rotation": 112,
+    "kiva-functions-compositionality-Counting,Reflect": 256,
+    "kiva-functions-compositionality-Counting,Resizing": 768,
+    "kiva-functions-compositionality-Counting,Rotation": 896,
+    "kiva-functions-compositionality-Reflect,Resizing": 192,
+    "kiva-functions-compositionality-Resizing,Rotation": 96,
+}
+
 
 class OnTheFlyKiVADataset(Dataset):
     def __init__(
         self,
         objects_dir: str,
-        distribution_config: dict[str, float],
+        distribution_config: dict[str, float] | None = None,
         epoch_length: int = 1000,
         transform=None,
     ):
         self.root_dir = Path(objects_dir)
         self.epoch_length = epoch_length
+
+        # Use default distribution if none provided
+        if distribution_config is None:
+            distribution_config = DEFAULT_DISTRIBUTION_CONFIG
 
         # Map transformation types to their specific object directories
         self.dir_map = {
