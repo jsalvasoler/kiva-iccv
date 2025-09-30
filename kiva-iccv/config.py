@@ -42,6 +42,13 @@ class Config(BaseModel):
     learning_rate: float = Field(default=1e-3, description="Learning rate")
     weight_decay: float = Field(default=1e-4, description="Weight decay")
     batch_size: int = Field(default=64, description="Batch size")
+    gradient_accumulation_steps: int = Field(
+        default=1,
+        description=(
+            "Number of gradient accumulation steps. "
+            "Effective batch size = batch_size x gradient_accumulation_steps"
+        ),
+    )
     epochs: int = Field(default=5, description="Number of epochs")
     num_workers: int = Field(default=8, description="Number of workers for data loading")
     device: Literal["cuda", "cpu"] = Field(

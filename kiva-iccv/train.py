@@ -484,6 +484,17 @@ def train(args) -> str | None:
         print("⚡ Mixed precision training enabled (torch.cuda.amp)")
     else:
         print("📊 Using standard precision training")
+
+    # Print gradient accumulation info
+    effective_batch_size = train_config.batch_size * train_config.gradient_accumulation_steps
+    if train_config.gradient_accumulation_steps > 1:
+        print(f"🔄 Gradient accumulation enabled: {train_config.gradient_accumulation_steps} steps")
+        print(
+            f"   Batch size: {train_config.batch_size}, "
+            f"Effective batch size: {effective_batch_size}"
+        )
+    else:
+        print(f"   Batch size: {train_config.batch_size}")
     best_accuracy = 0.0
     start_epoch = 0
 
@@ -529,7 +540,9 @@ def train(args) -> str | None:
             train_loader, desc=f"Epoch {epoch + 1}/{train_config.epochs} [Training]"
         )
 
-        for batch in progress_bar:
+        optimizer.zero_grad()  # Zero gradients at the start of each epoch
+
+        for batch_idx, batch in enumerate(progress_bar):
             ex_before, ex_after, test_before, ch_a, ch_b, ch_c, correct_idx, _ = batch
             ex_before = ex_before.to(device)
             ex_after = ex_after.to(device)
@@ -539,25 +552,26 @@ def train(args) -> str | None:
             ch_c = ch_c.to(device)
             correct_idx = correct_idx.to(device)
 
-            optimizer.zero_grad()
-
             # Mixed precision forward pass
             if scaler is not None:
                 with autocast("cuda"):
                     model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
                     loss = criterion(model_outputs, correct_idx)
+                    # Normalize loss by accumulation steps
+                    loss = loss / train_config.gradient_accumulation_steps
 
                 # Mixed precision backward pass
                 scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
             else:
                 # Standard precision
                 model_outputs = model(ex_before, ex_after, test_before, ch_a, ch_b, ch_c)
                 loss = criterion(model_outputs, correct_idx)
+                # Normalize loss by accumulation steps
+                loss = loss / train_config.gradient_accumulation_steps
                 loss.backward()
-                optimizer.step()
-            running_loss += loss.item()
+
+            # Accumulate the loss for logging (multiply back to get original scale)
+            running_loss += loss.item() * train_config.gradient_accumulation_steps
 
             # Calculate training accuracy on-the-fly
             with torch.no_grad():
@@ -570,8 +584,21 @@ def train(args) -> str | None:
                 train_correct += (predictions == correct_idx).sum().item()
                 train_total += ex_before.size(0)
 
+            # Update weights every gradient_accumulation_steps
+            if (batch_idx + 1) % train_config.gradient_accumulation_steps == 0:
+                if scaler is not None:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+                optimizer.zero_grad()
+
             current_train_acc = 100 * train_correct / train_total if train_total > 0 else 0
-            progress_bar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{current_train_acc:.1f}%")
+            # Show the original scale loss in progress bar
+            progress_bar.set_postfix(
+                loss=f"{loss.item() * train_config.gradient_accumulation_steps:.4f}",
+                acc=f"{current_train_acc:.1f}%",
+            )
 
         scheduler.step()
         avg_train_loss = running_loss / len(train_loader)
