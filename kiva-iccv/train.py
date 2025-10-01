@@ -233,10 +233,19 @@ def dataset_factory(args, config: Config) -> Dataset:
         else:
             print("📋 Using default distribution config")
 
+        if config.include_train_for_otf:
+            include_data_dir = config.data_dir
+            include_metadata_path = config.metadata_path
+        else:
+            include_data_dir = None
+            include_metadata_path = None
+
         return OnTheFlyKiVADataset(
             objects_dir="./data/KiVA/untransformed objects",
             distribution_config=distribution_config,
             epoch_length=config.otf_epoch_length,
+            include_data_dir=include_data_dir,
+            include_metadata_path=include_metadata_path,
         )
 
     return VisualAnalogyDataset(config.data_dir, config.metadata_path)

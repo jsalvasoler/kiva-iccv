@@ -1,8 +1,10 @@
 import os
 import random
+import warnings
 from pathlib import Path
 
 import torch
+from dataset import VisualAnalogyDataset
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.io import read_image
@@ -46,10 +48,29 @@ class OnTheFlyKiVADataset(Dataset):
         objects_dir: str,
         distribution_config: dict[str, float] | None = None,
         epoch_length: int = 1000,
+        include_data_dir: str | None = None,
+        include_metadata_path: str | None = None,
         transform=None,
     ):
         self.root_dir = Path(objects_dir)
         self.epoch_length = epoch_length
+
+        # Initialize the included dataset if provided
+        self.included_dataset = None
+        if include_data_dir is not None:
+            self.included_dataset = VisualAnalogyDataset(
+                data_dir=include_data_dir, metadata_path=include_metadata_path, transform=transform
+            )
+            x = f"{len(self.included_dataset)} / {self.epoch_length}"
+            print(f"{x} samples loaded from {include_data_dir}")
+
+            if len(self.included_dataset) >= self.epoch_length:
+                warnings.warn(
+                    f"Included dataset has {len(self.included_dataset)} samples, "
+                    f"but epoch length is {self.epoch_length}. "
+                    f"The loaded dataset is essentially the included dataset.",
+                    stacklevel=2,
+                )
 
         # Use default distribution if none provided
         if distribution_config is None:
@@ -514,6 +535,11 @@ class OnTheFlyKiVADataset(Dataset):
         ), f"Resizing{true_resizing_param}_Rotation{true_rotation_param}"
 
     def __getitem__(self, idx: int) -> tuple:
+        # If we have an included dataset and idx is within its range, use it
+        if self.included_dataset is not None and idx < len(self.included_dataset):
+            return self.included_dataset[idx]
+
+        # Otherwise, generate on-the-fly
         if not self.rules:
             raise RuntimeError("Distribution config is empty or all weights are zero.")
         rule_str = random.choices(self.rules, self.weights, k=1)[0]

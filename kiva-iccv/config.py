@@ -22,6 +22,10 @@ class Config(BaseModel):
             "and not the validation or test datasets."
         ),
     )
+    include_train_for_otf: bool = Field(
+        default=True,
+        description="Whether to include the train dataset for on-the-fly generation",
+    )
 
     # Loss
     loss_type: Literal["standard_triplet", "contrastive", "softmax"] = Field(
