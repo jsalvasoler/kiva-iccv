@@ -865,6 +865,6 @@ if __name__ == "__main__":
     if args.do_test:
         test(args, neptune_run_id)
 
-    # --- Cleanup Phase ---
-    if not neptune_run_id:
+    # --- Cleanup Phase (if train without neptune, this is just a dev run)---
+    if not neptune_run_id and not args.do_test:
         shutil.rmtree(args.output_dir)
