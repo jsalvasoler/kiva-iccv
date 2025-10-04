@@ -17,4 +17,4 @@ uv.lock
 __pycache__/
 
 
-
+report/build/*
