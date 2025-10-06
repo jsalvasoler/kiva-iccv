@@ -4,6 +4,10 @@ notebook/*.svg
 notebook/*.json
 output/*
 .neptune/*
+
+# IDEs
+.vscode/*
+.idea/*
 .cursor/*
 
 # envs
