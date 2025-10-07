@@ -1,5 +1,7 @@
 # KIVA-ICCV: Visual Analogy Learning
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A PyTorch implementation of a Siamese Network for solving visual analogies, designed for the ICCV challenge.
 
 ## 🚀 Quick Start
