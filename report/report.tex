@@ -157,7 +157,7 @@ The complete forward pass can be summarized as:
 \end{align*}
 
 \paragraph{Loss Function}
-After comparing against the standard triplet loss and softmax cross-entropy loss, we found that a simple \textbf{contrastive analogy loss} \cite{chopra2005learning} performed best. Given a training example consisting of an example transformation $\mathbf{t}_{\text{ex}}$, one correct choice transformation $\mathbf{t}_{\text{pos}}$, and $n$ incorrect choice transformations $\{\mathbf{t}_{\text{neg}_i}\}_{i=1}^{n}$, the loss aims to maximize the similarity between $\mathbf{t}_{\text{ex}}$ and $\mathbf{t}_{\text{pos}}$, minimize the similarity between $\mathbf{t}_{\text{ex}}$ and each $\mathbf{t}_{\text{neg}_i}$, and enforce a margin $m$ between positive and negative similarities:
+After comparing the standard triplet loss and softmax cross-entropy loss, we found that a simple \textbf{contrastive analogy loss} \cite{chopra2005learning} performed best. Given a training example consisting of an example transformation $\mathbf{t}_{\text{ex}}$, one correct choice transformation $\mathbf{t}_{\text{pos}}$, and $n$ incorrect choice transformations $\{\mathbf{t}_{\text{neg}_i}\}_{i=1}^{n}$, the loss aims to maximize the similarity between $\mathbf{t}_{\text{ex}}$ and $\mathbf{t}_{\text{pos}}$, minimize the similarity between $\mathbf{t}_{\text{ex}}$ and each $\mathbf{t}_{\text{neg}_i}$, and enforce a margin $m$ between positive and negative similarities:
 \begin{equation}
 \mathcal{L} = \frac{1}{n-1}\sum_{i=1}^{n-1} \max\left(0, m - \left(s_{\text{pos}} - s_{\text{neg}_i}\right)\right)
 \end{equation}
@@ -166,7 +166,7 @@ where $s_{\text{pos}} = \text{sim}(\mathbf{t}_{\text{ex}}, \mathbf{t}_{\text{pos
 
 \section{Experiments \& Results}
 
-\paragraph{Implementation and Hardware} The implementation uses Pytorch for modeling and Neptune for logging. We perform the experiments on a single NVIDIA L40S GPU with $40$GB of memory.
+\paragraph{Implementation and Hardware} The implementation uses PyTorch for modeling and Neptune for logging. We perform the experiments on a single NVIDIA L40S GPU with $40$GB of memory.
 
 \paragraph{Model Configuration}
 We use \texttt{vit\_small\_patch16\_224} as our encoder backbone, initializing its weights with pretrained checkpoints from \texttt{timm}. This sets a resolution of $224 \times 224$ pixels. We set the embedding dimension to $e=512$, and the projection head consists of two linear layers with a ReLU activation, dropout, and layer normalization, mapping the ViT output to the final embedding space. This gives the model a total of $22.7$M learnable parameters.
@@ -180,7 +180,7 @@ We use mixed precision training to speed up the training process.
 We use the code from the official KiVA dataset \cite{yee2025kiva} to augment the provided training data. Our pipeline generated random training samples on-the-fly that follow a similar distribution as the official training set. We included transformations with parameter combinations not present in the original training set to improve model generalization. We set the epoch length to $65536$ examples, $2752$ of which come from the official training set, and the rest are generated on-the-fly.
 
 \paragraph{Results}
-Table~\ref{tab:kiva_results} presents our model's Top-1 accuracy on both validation and test sets, broken down by difficulty level. The results demonstrate the effectiveness of our approach, and the model's generalization is excellent, as the gap between validation and test accuracy is minimal. Figure~\ref{fig:radar_plot} provides a granular breakdown of test set performance, showing that while the model performance decreases as task complexity increases, particularly on compositionality tasks involving Counting. The final configuration was identified after extensive experimentation (152 runs), as illustrated by the sample of training curves in Figure~\ref{fig:train_runs}.
+Table~\ref{tab:kiva_results} presents our model's Top-1 accuracy on both validation and test sets, broken down by difficulty level. The results demonstrate the effectiveness of our approach, and the model's generalization is excellent, as the gap between validation and test accuracy is minimal. Figure~\ref{fig:radar_plot} provides a granular breakdown of test set performance, showing that while the model performance decreases as task complexity increases, particularly on compositionality tasks involving counting. The final configuration was identified after extensive experimentation (152 runs), as illustrated by the sample of training curves in Figure~\ref{fig:train_runs}.
 
 \begin{table}[!htb]
     \caption{Final accuracy (\%) on the KiVA benchmark. Results are shown for validation and test sets across three difficulty levels.}
