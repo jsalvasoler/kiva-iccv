@@ -4,6 +4,16 @@
 
 A PyTorch implementation of a Siamese Network for solving visual analogies, designed for the ICCV challenge.
 
+## 📖 About the Competition
+
+This project is developed for the **[KiVA x Perception Test Challenge](https://kiva-challenge.github.io/)**, a guest challenge at the [Perception Test Workshop](https://perception-test-challenge.github.io/) at ICCV 2025 in Honolulu. The KiVA (Kids' Visual Analogies) challenge evaluates a model's capacity for abstract visual reasoning that even human children can achieve. The task involves solving visual analogies of the form "A is to B as C is to ?" where models must identify transformations between image pairs and apply them to new scenarios.
+
+<p align="center">
+  <img src="report/figures/kiva-example.png" alt="KiVA Example" width="600"/>
+</p>
+
+The challenge features three levels of difficulty and aims to push the boundaries of visual reasoning in computer vision systems. Our solution uses a Siamese Network architecture with specialized Transformer encoders to learn and match visual transformations.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
