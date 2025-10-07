@@ -49,6 +49,7 @@ make fmt # format the code
 ```bash
 make set-up-data
 ```
+After running this, you are ready to go!
 
 #### What the script is doing
 
@@ -136,131 +137,47 @@ rm -rf KiVA
 ## 🧠 Model Architecture
 
 ### Overview
-The model implements a **Siamese Analogy Network** designed to solve visual analogies of the form "A is to B as C is to ?". The architecture learns transformation representations that capture the relationship between image pairs and uses cosine similarity to find the best matching transformation.
+The **SiameseAnalogyNetwork** solves visual analogies of the form "A is to B as C is to ?" by learning transformation representations and using cosine similarity to match transformations.
 
-### Core Architecture Components
+**Input**: 6 images (example before/after, test before, 3 choices)  
+**Output**: 4 normalized transformation vectors for similarity comparison
 
-#### 1. **SiameseAnalogyNetwork**
-The main model class that orchestrates the entire pipeline:
-- **Input**: 6 images (example before/after, test before, 3 choices)
-- **Output**: 4 normalized transformation vectors for similarity comparison
-- **Key Features**:
-  - Supports both Vision Transformer (ViT) and ResNet backbones
-  - Adaptive architecture selection based on encoder type
-  - Configurable embedding dimensions (default: 512)
-  - Optional encoder freezing for transfer learning
+### Supported Encoders
 
-#### 2. **TransformationEncoder** (ViT-specific)
-A novel architecture for ViT models that processes image pairs as unified sequences:
+#### **Vision Transformers (Recommended)**
+- `vit_small_patch16_224`, `vit_base_patch16_224` - Standard ViT models
+- `vit_small_patch16_dinov3` - DINOv3 models with rotary position embeddings (RoPE)
 
-```python
-# Key innovations:
-- Concatenated patch sequences from both images
-- Extended positional embeddings for dual-image input
-- Segment embeddings to distinguish between images A and B
-- Single CLS token representing the transformation
-```
-
-**Architecture Details**:
-- Processes two images as a single transformer sequence
-- Positional embeddings: `[CLS, img1_patches, img2_patches]`
-- Segment embeddings: `{0: CLS, 1: image_A, 2: image_B}`
+Uses specialized **TransformationEncoder** architectures that process image pairs as unified sequences:
+- **Standard ViT**: `[CLS, img1_patches, img2_patches]` with extended positional embeddings and segment embeddings
+- **DINOv3**: `[CLS, register_tokens, img1_patches, img2_patches]` with RoPE handling and 4 register tokens
 - Output: CLS token embedding representing the transformation
 
-#### 3. **Projection Head**
-A multi-layer projection network applied to all encoder outputs:
+#### **ResNet Models**
+- `resnet18`, `resnet50` - Traditional CNN backbones
+- Uses subtraction-based transformations (e.g., `after - before`)
+
+### Architecture Components
+
+**Projection Head** (applied to all encoder outputs):
 ```python
 nn.Sequential(
-    nn.Linear(encoder_dim, embedding_dim),
-    nn.ReLU(inplace=True),
-    nn.Dropout(0.2),
-    nn.Linear(embedding_dim, embedding_dim),
-    nn.LayerNorm(embedding_dim)
+    nn.Linear(encoder_dim, 512),
+    nn.ReLU(), Dropout(0.2),
+    nn.Linear(512, 512),
+    nn.LayerNorm(512)
 )
 ```
 
-### Supported Encoder Backbones
-
-#### **Vision Transformers (Recommended)**
-- `vit_small_patch16_224` - Small ViT, 384 features
-- `vit_base_patch16_224` - Base ViT, 768 features
-- Uses the advanced **TransformationEncoder** architecture
-- Processes image pairs as unified sequences
-
-#### **ResNet Models (Legacy)**
-- `resnet18` - 512 features
-- `resnet50` - 2048 features
-- Uses traditional Siamese approach with subtraction-based transformations
-- Fallback for comparison with simpler architectures
+**Key Features**:
+- Differential learning rates: encoder (0.1×LR), projection (1.0×LR)
+- L2 normalization for cosine similarity
+- Optional encoder freezing for transfer learning
+- Configurable embedding dimensions (default: 512)
 
 ### Loss Functions
 
-#### 1. **Standard Triplet Loss** (`standard_triplet`)
-- **Concept**: Anchor-positive-negative triplet learning
-- **Implementation**: Uses `nn.TripletMarginLoss`
-- **Parameters**: `margin` (default: 1.0)
-- **Use Case**: Strong baseline for metric learning
-
-#### 2. **Contrastive Analogy Loss** (`contrastive`)
-- **Concept**: Custom contrastive loss for analogy tasks
-- **Implementation**: Margin-based ranking loss
-- **Formula**: `max(0, margin - (pos_sim - neg_sim))`
-- **Parameters**: `margin` (default: 0.5)
-- **Use Case**: Direct optimization for analogy ranking
-
-#### 3. **Softmax Analogy Loss** (`softmax`)
-- **Concept**: Cross-entropy over similarity scores
-- **Implementation**: Temperature-scaled cosine similarities
-- **Formula**: `CrossEntropy(similarities / temperature, correct_idx)`
-- **Parameters**: `temperature` (default: 0.07)
-- **Use Case**: Probabilistic approach, similar to InfoNCE
-
-### Optimization Setup
-
-#### **Optimizer: AdamW**
-- **Differential Learning Rates**:
-  - Encoder parameters: `learning_rate × 0.1` (fine-tuning)
-  - Projection parameters: `learning_rate` (full learning)
-- **Weight Decay**: 1e-4 (default)
-- **Rationale**: Slower adaptation of pretrained features, faster learning of task-specific projections
-
-#### **Scheduler: Cosine Annealing**
-- **Type**: `CosineAnnealingLR`
-- **Schedule**: Smooth decay from initial LR to 0 over training epochs
-- **Benefits**: Helps convergence and prevents overfitting in later epochs
-
-### Model Variants & Configuration
-
-#### **Key Hyperparameters**
-```python
-embedding_dim: int = 512        # Final embedding dimension
-freeze_encoder: bool = False    # Whether to freeze backbone
-encoder_name: str = "vit_small_patch16_224"  # Backbone architecture
-learning_rate: float = 1e-3     # Base learning rate
-batch_size: int = 64           # Training batch size
-```
-
-#### **Architecture Selection Logic**
-```python
-if encoder_name.startswith("vit"):
-    # Use TransformationEncoder (advanced)
-    encoder = TransformationEncoder(encoder_name)
-else:
-    # Use traditional Siamese approach
-    encoder = get_encoder(encoder_name)
-```
-
-### Training Strategy
-
-1. **Dual-Phase Learning**: Different learning rates for encoder vs. projection
-2. **Cosine Annealing**: Smooth learning rate decay
-3. **Normalization**: L2 normalization of final embeddings for cosine similarity
-4. **Evaluation**: Argmax over cosine similarities for prediction
-
-### Performance Considerations
-
-- **ViT Models**: More parameters but better transformation modeling
-- **ResNet Models**: Faster training, simpler architecture
-- **Memory Usage**: ViT processes longer sequences (393 vs 197 tokens)
-- **Computational Cost**: TransformationEncoder requires custom positional embeddings
+1. **Standard Triplet Loss** (`standard_triplet`): Anchor-positive-negative triplet learning with margin
+2. **Contrastive Analogy Loss** (`contrastive`): Margin-based ranking loss optimizing `max(0, margin - (pos_sim - neg_sim))`
+3. **Softmax Analogy Loss** (`softmax`): Temperature-scaled cross-entropy over similarity scores
 
