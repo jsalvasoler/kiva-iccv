@@ -12,14 +12,11 @@ A PyTorch implementation of a Siamese Network for solving visual analogies, desi
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Install dependencies
+2. Install dependencies from `pyproject.toml`
 
 ```bash
-# Install dependencies using uv
 uv sync
 ```
-
-This will automatically install all dependencies from your `pyproject.toml` file.
 
 ### Useful commands and basic CLI usage
 
@@ -28,9 +25,13 @@ You can start by copying the `.env.template` file to `.env` and filling in the A
 cp .env.template .env
 ```
 
-Main commands:
+The entry point for training and testing the model is:
 ```
-uv run --env-file .env python kiva-iccv/train.py --do_train --do_test --epochs 30 --batch_size 64
+uv run --env-file .env python kiva-iccv/train.py \ 
+    --do_train \
+    --do_test \
+    --epochs 30 \
+    --batch_size 64
 ```
 For the full list of options, run `uv run python kiva-iccv/train.py --help`.
 
